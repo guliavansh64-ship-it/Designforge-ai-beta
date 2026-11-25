@@ -1,0 +1,116 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { auth, db, C } from '../lib/firebase.js';
+import { ah, validate } from '../middleware/validate.js';
+import { getEntitlements } from '../services/plans.js';
+import { getBalance } from '../services/credits.js';
+import { listConnectionStatus } from '../services/connections.js';
+import { zipFiles } from '../services/exporter.js';
+
+export const meRouter = Router();
+
+/** Upserts the profile on every call (first call = registration). */
+meRouter.get('/me', ah(async (req, res) => {
+  const u = req.user!;
+  const ref = db().collection(C.users).doc(u.uid);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    await ref.set({ uid: u.uid, email: u.email ?? null, displayName: u.name ?? null, photoURL: u.picture ?? null, status: 'active', createdAt: Date.now(), lastSeenAt: Date.now() });
+    const { track } = await import('../services/notify.js');
+    await track('registrations');
+  } else {
+    await ref.update({ lastSeenAt: Date.now(), email: u.email ?? snap.get('email') ?? null, photoURL: u.picture ?? snap.get('photoURL') ?? null });
+  }
+  const [profile, ent, balance, connections, prefs] = await Promise.all([
+    ref.get(), getEntitlements(u.uid), getBalance(u.uid), listConnectionStatus(u.uid), db().collection(C.prefs).doc(u.uid).get(),
+  ]);
+  const p = profile.data()!;
+  res.json({
+    user: { uid: u.uid, email: p.email, displayName: p.displayName, photoURL: p.photoURL, createdAt: p.createdAt, isAdmin: !!u.adminRole, adminRole: u.adminRole ?? null },
+    plan: ent.plan, subscription: ent.sub, credits: balance, connections,
+    preferences: prefs.data() ?? { theme: 'system', defaultDevice: 'DESKTOP', defaultModel: 'GEMINI_3_FLASH', notificationPrefs: { push: true, email: false } },
+  });
+}));
+
+meRouter.patch('/me', validate(z.object({
+  displayName: z.string().trim().min(1).max(60).optional(),
+  preferences: z.object({
+    theme: z.enum(['light', 'dark', 'system']).optional(),
+    defaultDevice: z.enum(['MOBILE', 'DESKTOP', 'TABLET', 'AGNOSTIC']).optional(),
+    defaultModel: z.enum(['GEMINI_3_FLASH', 'GEMINI_3_1_PRO']).optional(),
+    notificationPrefs: z.object({ push: z.boolean(), email: z.boolean() }).partial().optional(),
+  }).optional(),
+})), ah(async (req, res) => {
+  const uid = req.user!.uid;
+  if (req.body.displayName) {
+    await db().collection(C.users).doc(uid).update({ displayName: req.body.displayName });
+    await auth().updateUser(uid, { displayName: req.body.displayName });
+  }
+  if (req.body.preferences) {
+    await db().collection(C.prefs).doc(uid).set({ ownerId: uid, ...req.body.preferences }, { merge: true });
+    if (req.body.preferences.notificationPrefs) await db().collection(C.users).doc(uid).set({ notificationPrefs: req.body.preferences.notificationPrefs }, { merge: true });
+  }
+  res.json({ ok: true });
+}));
+
+meRouter.post('/me/push-token', validate(z.object({ token: z.string().regex(/^ExponentPushToken\[[A-Za-z0-9_-]+\]$/) })), ah(async (req, res) => {
+  const { FieldValue } = await import('../lib/firebase.js');
+  await db().collection(C.users).doc(req.user!.uid).set({ expoPushTokens: FieldValue.arrayUnion(req.body.token) }, { merge: true });
+  res.json({ ok: true });
+}));
+
+meRouter.delete('/me/push-token', validate(z.object({ token: z.string() })), ah(async (req, res) => {
+  const { FieldValue } = await import('../lib/firebase.js');
+  await db().collection(C.users).doc(req.user!.uid).set({ expoPushTokens: FieldValue.arrayRemove(req.body.token) }, { merge: true });
+  res.json({ ok: true });
+}));
+
+/** Sign out of all devices (revokes refresh tokens; ID tokens fail checkRevoked immediately). */
+meRouter.post('/me/logout-all', ah(async (req, res) => {
+  await auth().revokeRefreshTokens(req.user!.uid);
+  res.json({ ok: true });
+}));
+
+const OWNED = [C.projects, C.versions, C.jobs, C.generations, C.notifications, C.tickets, C.connections, C.chat, C.assets] as const;
+
+/** GDPR-style data export (JSON files in a ZIP). Never includes encrypted credentials. */
+meRouter.get('/me/export', ah(async (req, res) => {
+  const uid = req.user!.uid;
+  const files: Record<string, string> = {};
+  for (const col of [...OWNED, C.creditTxns, C.payments]) {
+    const snap = await db().collection(col).where('ownerId', '==', uid).limit(5000).get();
+    files[`${col}.json`] = JSON.stringify(snap.docs.map((d) => {
+      const { encryptedKey, ...rest } = d.data();
+      return { id: d.id, ...rest };
+    }), null, 2);
+  }
+  files['profile.json'] = JSON.stringify((await db().collection(C.users).doc(uid).get()).data() ?? {}, null, 2);
+  const zip = await zipFiles(files, 'designforge-data-export');
+  res.setHeader('content-type', 'application/zip');
+  res.setHeader('content-disposition', 'attachment; filename="designforge-data-export.zip"');
+  res.send(zip);
+}));
+
+/** Account deletion: removes owned data, credentials and the auth user. Payment records are retained (anonymised) for tax law. */
+meRouter.delete('/me', validate(z.object({ confirm: z.literal('DELETE') })), ah(async (req, res) => {
+  const uid = req.user!.uid;
+  for (const col of OWNED) {
+    while (true) {
+      const snap = await db().collection(col).where('ownerId', '==', uid).limit(300).get();
+      if (snap.empty) break;
+      const batch = db().batch();
+      for (const d of snap.docs) {
+        if (col === C.assets) { const ch = await d.ref.collection('chunks').get(); ch.docs.forEach((c) => batch.delete(c.ref)); }
+        batch.delete(d.ref);
+      }
+      await batch.commit();
+    }
+  }
+  const pays = await db().collection(C.payments).where('ownerId', '==', uid).get();
+  const b = db().batch();
+  pays.docs.forEach((d) => b.update(d.ref, { ownerId: `deleted_${uid.slice(0, 6)}`, anonymisedAt: Date.now() }));
+  [C.users, C.prefs, C.wallets, C.subscriptions].forEach((col) => b.delete(db().collection(col).doc(uid)));
+  await b.commit();
+  await auth().deleteUser(uid);
+  res.json({ ok: true });
+}));

@@ -1,0 +1,22 @@
+# Cloudflare Pages response headers (also documented in docs/06-SECURITY.md).
+# The app's Content-Security-Policy is injected as a <meta> tag at build time (vite.config.ts) so that
+# it applies ONLY to the SPA document — the preview sandbox below needs a different policy.
+/*
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(self "https://api.razorpay.com"), usb=()
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Generated-design sandbox (framed by the app with sandbox="allow-scripts", opaque origin).
+# Allows only the Tailwind runtime, Google Fonts and https images; connect-src 'none' blocks exfiltration.
+/sandbox.html
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src https: data: blob:; media-src https: data:; connect-src 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'; frame-ancestors 'self'
+  Cache-Control: no-store
+/sandbox
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src https: data: blob:; media-src https: data:; connect-src 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'; frame-ancestors 'self'
+  Cache-Control: no-store

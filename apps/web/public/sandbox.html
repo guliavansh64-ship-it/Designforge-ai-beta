@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>DesignForge preview sandbox</title></head>
+<body><script>
+/* Loaded inside <iframe sandbox="allow-scripts"> (opaque origin). Receives ONE document from the
+   embedding DesignForge window and renders it. Served with its own narrow CSP (see _headers):
+   no connect/fetch, no forms, no nested frames. Messages from anything but the parent are ignored. */
+(function () {
+  var done = false;
+  window.addEventListener('message', function (e) {
+    if (done || e.source !== window.parent || !e.data || e.data.__dfRender !== 1 || typeof e.data.html !== 'string') return;
+    done = true;
+    document.open(); document.write(e.data.html); document.close();
+  });
+  window.parent.postMessage({ __df: 1, type: 'sandbox-ready' }, '*');
+})();
+</script></body></html>

@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+html:not(.dark) { color-scheme: light; }
+html, body, #root { height: 100%; }
+body { font-feature-settings: 'cv11', 'ss01'; }
+
+@layer components {
+  .surface { @apply bg-white border border-ink-200 dark:bg-ink-900 dark:border-ink-800; }
+  .surface-2 { @apply bg-ink-50 dark:bg-ink-850; }
+  .muted { @apply text-ink-500 dark:text-ink-400; }
+  .focus-ring { @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forge-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-ink-950; }
+  .field { @apply w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-sm text-ink-900 placeholder:text-ink-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100 focus:border-forge-500 focus:outline-none focus:ring-2 focus:ring-forge-500/30; }
+  .label { @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400; }
+  .gradient-text { @apply bg-forge-gradient bg-clip-text text-transparent; }
+  .skeleton { @apply animate-shimmer rounded-lg bg-[length:200%_100%] bg-gradient-to-r from-ink-100 via-ink-200 to-ink-100 dark:from-ink-850 dark:via-ink-800 dark:to-ink-850; }
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(134,134,160,.25); border-radius: 10px; border: 2px solid transparent; background-clip: content-box; }
