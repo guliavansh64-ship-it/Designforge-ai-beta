@@ -11,6 +11,7 @@ import { persistRemoteImage, putBlob } from './blobs.js';
 import * as credits from './credits.js';
 import { notify, track } from './notify.js';
 import { runLogoJob, type LogoJobInput } from './logos.js';
+import { safeQuery } from '../lib/safeQuery.js';
 
 /**
  * In-process job queue (free-tier friendly; single API instance).
@@ -144,13 +145,31 @@ async function run(jobId: string) {
   }
 }
 
-/** Boot-time recovery: jobs interrupted by a restart are failed and refunded. */
+/**
+ * Recovery for jobs orphaned by a restart/crash: failed + refunded.
+ *
+ * Only STALE jobs are touched (no progress for longer than one full Stitch call can take), never
+ * fresh ones. Render starts the new instance BEFORE stopping the old one during a deploy, so failing
+ * every queued/running job at boot would kill generations the old instance is still finishing.
+ * Runs at boot and then every 5 minutes, so orphans are still cleaned up shortly after.
+ */
 export async function recoverInterruptedJobs() {
+  const staleBefore = Date.now() - (env.JOB_TIMEOUT_MS + 3 * 60_000);
   const snap = await db().collection(C.jobs).where('status', 'in', ['queued', 'running']).limit(200).get();
+  let n = 0;
   for (const d of snap.docs) {
-    await finish(d.data() as GenerationJob, 'failed', { error: { code: 'INTERRUPTED', message: 'The server restarted while this job was running. Credits refunded — please retry.' } });
+    const j = d.data() as GenerationJob & { updatedAt?: number };
+    if ((j.updatedAt ?? j.createdAt ?? 0) > staleBefore) continue;
+    await finish(j, 'failed', { error: { code: 'INTERRUPTED', message: 'The server restarted while this job was running. Credits refunded — please retry.' } });
+    n++;
   }
-  if (snap.size) logger.info({ count: snap.size }, 'recovered interrupted jobs');
+  if (n) logger.info({ count: n }, 'recovered interrupted jobs');
+}
+let sweeper: ReturnType<typeof setInterval> | null = null;
+export function startStaleJobSweeper() {
+  if (sweeper) return;
+  sweeper = setInterval(() => { recoverInterruptedJobs().catch((e) => logger.warn({ err: e }, 'stale job sweep failed')); }, 5 * 60_000);
+  sweeper.unref();
 }
 
 // ───────────────────────── runners ─────────────────────────
@@ -307,7 +326,7 @@ export function startSchedulers() {
   const tick = async () => {
     try {
       const now = Date.now();
-      const soon = await db().collection(C.subscriptions).where('status', '==', 'active').where('currentPeriodEnd', '<', now + 3 * 86400_000).limit(200).get();
+      const soon = { docs: await safeQuery(db().collection(C.subscriptions), { where: [['status', '==', 'active'], ['currentPeriodEnd', '<', now + 3 * 86400_000]], limit: 200, fallbackCap: 2000 }) };
       for (const d of soon.docs) {
         const s = d.data();
         if (s.planId === 'lifetime' || s.planId === 'free') continue;

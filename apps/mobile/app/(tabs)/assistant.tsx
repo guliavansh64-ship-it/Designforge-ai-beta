@@ -9,7 +9,7 @@ import { useColors } from '../../lib/theme';
 import type { Project } from '../../lib/types';
 import { Button, Chip, Empty, ErrorBox, Field, Row, T } from '../../components/ui';
 import { JobCard } from '../../components/JobCard';
-import { Animated, PressScale, TypingDots, listLayout } from '../../components/motion';
+import { Animated, PressScale, TypingDots } from '../../components/motion';
 
 interface Msg { id: string; role: 'user' | 'assistant'; text: string; code?: string; createdAt: number }
 const SUGGEST = ['Make this design more premium', 'Improve the mobile layout', 'Change the colour theme to deep green', 'Add a testimonials section', 'Show me 3 variations', 'Convert this to React'];
@@ -45,7 +45,6 @@ export default function Assistant() {
         {usable.map((p) => <Chip key={p.id} label={p.name} active={p.id === project?.id} onPress={() => setPid(p.id)} />)}
       </ScrollView>
       <Animated.FlatList ref={list} initialNumToRender={12} maxToRenderPerBatch={10} windowSize={9} data={chat.data?.messages ?? []} keyExtractor={(m: Msg) => m.id} contentContainerStyle={{ padding: 12, gap: 10 }}
-        itemLayoutAnimation={listLayout}
         ListFooterComponent={busy || (job && !['succeeded', 'failed', 'cancelled'].includes(job.status)) ? <Animated.View entering={FadeIn} style={{ alignSelf: 'flex-start', backgroundColor: c.card, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 }}><TypingDots color={c.primary} /></Animated.View> : null}
         ListEmptyComponent={<T muted size={13}>Ask for changes in plain language. Each edit becomes a new version you can restore.</T>}
         renderItem={({ item: m }: { item: Msg }) => (

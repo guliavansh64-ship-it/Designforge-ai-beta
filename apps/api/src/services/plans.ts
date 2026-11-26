@@ -1,6 +1,6 @@
 import { DEFAULT_PLANS, type Feature, type PlanDefinition, type PlanId } from '@designforge/shared';
 import { db, C } from '../lib/firebase.js';
-import { Errors } from '../lib/errors.js';
+import { AppError, Errors } from '../lib/errors.js';
 
 let cache: { at: number; plans: PlanDefinition[] } | undefined;
 
@@ -61,4 +61,22 @@ export async function assertFeature(uid: string, feature: Feature) {
   const { plan } = await getEntitlements(uid);
   if (!plan.features.includes(feature)) throw Errors.feature(feature.replace(/_/g, ' '));
   return plan;
+}
+
+/**
+ * Project-limit check. Only projects that actually contain a design count toward the plan limit.
+ * Empty projects (e.g. left behind by a failed or cancelled generation) don't block creating new ones,
+ * but are separately capped so the limit can't be bypassed by spamming empty projects.
+ */
+export const EMPTY_PROJECT_ALLOWANCE = 10;
+export async function assertProjectQuota(uid: string, plan: { name: string; maxProjects: number }) {
+  const snap = await db().collection(C.projects).where('ownerId', '==', uid).where('archived', '==', false).select('currentVersionId').get();
+  const withDesign = snap.docs.filter((d) => !!d.get('currentVersionId')).length;
+  const empty = snap.size - withDesign;
+  if (withDesign >= plan.maxProjects) {
+    throw new AppError(403, 'PROJECT_LIMIT_REACHED', `Your ${plan.name} plan allows ${plan.maxProjects} active projects. Archive or delete one, or upgrade.`, 'upgrade_plan');
+  }
+  if (empty >= EMPTY_PROJECT_ALLOWANCE) {
+    throw new AppError(403, 'PROJECT_LIMIT_REACHED', `You have ${empty} empty projects. Delete some of them (Projects tab) to create new ones.`);
+  }
 }

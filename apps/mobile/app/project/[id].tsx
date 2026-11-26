@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useState } from 'react';
 import { showAlert, toast } from '../../components/Dialog';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
@@ -75,6 +76,12 @@ export default function ProjectScreen() {
   const versions = useApi<{ versions: Version[] }>(pageId ? `/projects/${id}/versions?pageId=${pageId}&limit=30` : null, [vkey]);
   const job = useJob(jobId, async (j: Job) => {
     await Promise.all([load(), refresh()]); setVkey((k) => k + 1);
+    if (j.status === 'succeeded') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      if (j.type !== 'variants') toast(j.type === 'edit' || j.type === 'chat_edit' ? 'Changes applied ✨' : 'Your design is ready ✨', 'success');
+    } else if (j.status === 'failed') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+    }
     if (j.status === 'succeeded' && j.type === 'variants' && j.resultVersionIds?.[0]) { setTab('versions'); showAlert('Variations ready', 'Open them in Versions and tap “Use” on your favourite.'); }
   });
   const running = job && !['succeeded', 'failed', 'cancelled'].includes(job.status);

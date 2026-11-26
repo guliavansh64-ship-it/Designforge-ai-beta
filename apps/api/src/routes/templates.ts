@@ -7,6 +7,7 @@ import { getEntitlements } from '../services/plans.js';
 import { auditHtml } from '../services/audit.js';
 import { newId } from '../lib/crypto.js';
 import { AppError, Errors } from '../lib/errors.js';
+import { assertProjectQuota } from '../services/plans.js';
 
 export const templatesPublicRouter = Router();
 
@@ -39,8 +40,7 @@ templatesRouter.post('/templates/:id/use', validate(z.object({ name: z.string().
   const t = await db().collection(C.templates).doc(req.params.id).get();
   if (!t.exists || !t.get('published')) throw Errors.notFound('Template');
   const { plan } = await getEntitlements(uid);
-  const count = (await db().collection(C.projects).where('ownerId', '==', uid).where('archived', '==', false).count().get()).data().count;
-  if (count >= plan.maxProjects) throw new AppError(403, 'PROJECT_LIMIT_REACHED', 'Project limit reached for your plan.', 'upgrade_plan');
+  await assertProjectQuota(uid, plan);
   const td = t.data()!;
   const id = newId('p_'); const pageId = newId('pg_'); const now = Date.now();
   const name = req.body.name ?? `${td.name}`;

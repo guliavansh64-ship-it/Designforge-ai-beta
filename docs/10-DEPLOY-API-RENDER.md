@@ -64,6 +64,16 @@ The `render.yaml` in this repo already uses `npm ci --include=dev ...`. If you c
 
 If the build succeeds but the deploy still fails, open **Logs**. A line starting with `Invalid configuration` means one of the 6 secret variables (section 3) is empty or wrong.
 
+### "Something went wrong" on Projects / logs say `The query requires an index`
+The Firestore indexes in `firestore.indexes.json` aren't deployed yet. The API now falls back to an
+index-free query automatically, so the app keeps working. To restore full speed, run this once from a PC:
+`npm i -g firebase-tools && firebase login && firebase deploy --only firestore:indexes` (in the repo root).
+
+### "Stitch not connected" right after moving to Render
+Keys are encrypted with `ENCRYPTION_KEY`. If Render's value differs from the one used when you connected, the
+saved key can't be read. Open **Integrations** and reconnect Stitch once. **Never change `ENCRYPTION_KEY`
+afterwards** (to rotate it, use `ENCRYPTION_KEY_PREVIOUS` as described in docs/03).
+
 ## 7. Updating the deploy (do this after every code update)
 
 Render only runs the code you last pushed. If the app shows
@@ -74,7 +84,7 @@ Render only runs the code you last pushed. If the app shows
 2. In Render, open **designforge-api → Manual Deploy → Clear build cache & deploy**.
 3. Open `https://<your-service>.onrender.com/health`. It must show:
    ```json
-   { "ok": true, "build": "stitch-2026-11", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
+   { "ok": true, "build": "2026-11-26", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
    ```
    If `build` is missing, the old code is still running.
 4. Optional: run a real end-to-end Stitch check from your PC. This uses 1 generation of *your* Stitch quota and deletes its test project afterwards:

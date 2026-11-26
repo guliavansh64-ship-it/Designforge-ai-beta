@@ -7,6 +7,7 @@ import { getEntitlements } from '../services/plans.js';
 import { getBalance } from '../services/credits.js';
 import { listConnectionStatus } from '../services/connections.js';
 import { zipFiles } from '../services/exporter.js';
+import { invalidateAuthCache } from '../middleware/auth.js';
 
 export const meRouter = Router();
 
@@ -72,6 +73,7 @@ meRouter.delete('/me/push-token', validate(z.object({ token: z.string() })), ah(
 /** Sign out of all devices (revokes refresh tokens; ID tokens fail checkRevoked immediately). */
 meRouter.post('/me/logout-all', ah(async (req, res) => {
   await auth().revokeRefreshTokens(req.user!.uid);
+  invalidateAuthCache(req.user!.uid);
   res.json({ ok: true });
 }));
 

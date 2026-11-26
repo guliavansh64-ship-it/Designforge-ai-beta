@@ -23,7 +23,7 @@ import { adminRouter } from './routes/admin.js';
 import { handleWebhook } from './services/billing.js';
 
 /** Bump when a deploy must be distinguishable from older ones (shown on /health). */
-export const API_BUILD = 'stitch-2026-11';
+export const API_BUILD = '2026-11-26';
 
 export function createApp() {
   const app = express();
@@ -49,7 +49,7 @@ export function createApp() {
   app.use(express.json({ limit: '8mb' }));
   app.use(globalLimiter);
 
-  // `build` lets you verify a deployment is current: it must say stitch-2026-11 (SDK 0.4 models + download_file).
+  // `build` lets you verify a deployment is current: it must say 2026-11-26 (Stitch SDK 0.4 + download_file + index fallback + auth cache).
   app.get('/health', (_req, res) => res.json({ ok: true, env: env.NODE_ENV, build: API_BUILD, stitchModels: STITCH_MODELS.map((m) => m.id), time: new Date().toISOString() }));
 
   // Public

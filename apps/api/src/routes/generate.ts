@@ -10,6 +10,7 @@ import { listConnectionStatus } from '../services/connections.js';
 import { cancelJob, enqueue } from '../services/jobs.js';
 import { AppError, Errors } from '../lib/errors.js';
 import { getSystemSettings } from '../services/settings.js';
+import { safeQuery } from '../lib/safeQuery.js';
 
 /**
  * AI generation endpoints. All return 202 + a job; clients poll GET /jobs/:id.
@@ -119,7 +120,7 @@ generateRouter.get('/jobs/:jobId', ah(async (req, res) => {
 
 generateRouter.get('/projects/:id/jobs', ah(async (req, res) => {
   await loadProject(req.params.id, req.user!.uid, 'viewer');
-  const s = await db().collection(C.jobs).where('ownerId', '==', req.user!.uid).where('projectId', '==', req.params.id).orderBy('createdAt', 'desc').limit(20).get();
+  const s = { docs: await safeQuery(db().collection(C.jobs), { where: [['ownerId', '==', req.user!.uid], ['projectId', '==', req.params.id]], orderBy: ['createdAt', 'desc'], limit: 20 }) };
   res.json({ jobs: s.docs.map((d) => { const { payload, ...j } = d.data(); return j; }) });
 }));
 

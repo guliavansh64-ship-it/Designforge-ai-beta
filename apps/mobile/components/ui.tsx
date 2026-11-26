@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, type ReactNode } from 'react';
+import { forwardRef, memo, useEffect, useRef, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle, type StyleProp } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
@@ -6,7 +6,7 @@ import { AlertTriangle } from 'lucide-react-native';
 import { radius, useColors } from '../lib/theme';
 import type { ApiError } from '../lib/api';
 import { Animated, AnimatedProgress, Appear, Float, PressScale, popIn, useActiveStyle, useShake } from './motion';
-import { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
+import { FadeIn, FadeInDown, FadeOut, useAnimatedStyle, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 
 type V = 'primary' | 'secondary' | 'ghost' | 'danger';
 export function Button({ title, onPress, variant = 'primary', loading, disabled, icon, style, small }: { title: string; onPress?: () => void; variant?: V; loading?: boolean; disabled?: boolean; icon?: ReactNode; style?: StyleProp<ViewStyle>; small?: boolean }) {
@@ -47,16 +47,26 @@ export const Field = forwardRef<TextInput, TextInputProps>((props, ref) => {
   return <TextInput ref={ref} placeholderTextColor={c.muted} {...props} style={[{ backgroundColor: c.card2, color: c.text, borderRadius: radius.md, borderWidth: 1, borderColor: c.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, textAlignVertical: props.multiline ? 'top' : 'center' }, props.style]} />;
 });
 
-export function Chip({ label, active, onPress }: { label: string; active?: boolean; onPress?: () => void }) {
+export const Chip = memo(function Chip({ label, active, onPress }: { label: string; active?: boolean; onPress?: () => void }) {
   const c = useColors();
   const anim = useActiveStyle(active, { on: c.primary + '26', off: c.primary + '00', borderOn: c.primary, borderOff: c.border });
+  // Pop: a quick springy overshoot when the chip becomes selected (skipped on first render).
+  const pop = useSharedValue(1);
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (mounted.current && active) pop.value = withSequence(withTiming(1.09, { duration: 90 }), withSpring(1, { damping: 9, stiffness: 320 }));
+    mounted.current = true;
+  }, [active, pop]);
+  const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }] }));
   return (
-    <PressScale onPress={() => { Haptics.selectionAsync().catch(() => undefined); onPress?.(); }} scaleTo={0.93} accessibilityRole="button" accessibilityState={{ selected: active }}
-      style={[{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1 }, anim]}>
-      <Text style={{ color: active ? c.primary : c.muted, fontSize: 13, fontWeight: '500' }}>{label}</Text>
-    </PressScale>
+    <Animated.View style={popStyle}>
+      <PressScale onPress={() => { Haptics.selectionAsync().catch(() => undefined); onPress?.(); }} scaleTo={0.93} accessibilityRole="button" accessibilityState={{ selected: active }}
+        style={[{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1 }, anim]}>
+        <Text style={{ color: active ? c.primary : c.muted, fontSize: 13, fontWeight: '500' }}>{label}</Text>
+      </PressScale>
+    </Animated.View>
   );
-}
+});
 
 export function Badge({ label, tone = 'neutral' }: { label: string; tone?: 'neutral' | 'green' | 'red' | 'amber' | 'primary' }) {
   const c = useColors();

@@ -6,7 +6,7 @@ import { api } from '../lib/api';
 import { useColors } from '../lib/theme';
 import type { Job } from '../lib/types';
 import { Button, Card, Progress, Row, T } from './ui';
-import { Animated, Pulse, listLayout, popIn } from './motion';
+import { Animated, Pulse, popIn } from './motion';
 
 function JobCardImpl({ job, onDismiss }: { job: Job; onDismiss?: () => void }) {
   const c = useColors();

@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { STITCH_MODELS, normalizeModel, type StitchModel } from '../../lib/models';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
@@ -29,12 +30,19 @@ export default function Studio() {
 
   const go = async () => {
     setBusy(true); setErr(null);
+    let created: Project | null = null;
     try {
       const { project } = await api.post<{ project: Project }>('/projects', { name: name.trim() || prompt.split(/[.,\n]/)[0].slice(0, 60) || 'Untitled', kind, deviceType: device });
+      created = project;
       const { job } = await api.post<{ job: { id: string } }>(`/projects/${project.id}/generate`, { prompt, deviceType: device, model, pageId: project.pages[0].id, style: style || undefined, idempotencyKey: newKey() });
       refresh(); setPrompt(''); setName('');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       router.push(`/project/${project.id}?job=${job.id}`);
-    } catch (e) { setErr(e as ApiError); } finally { setBusy(false); }
+    } catch (e) {
+      // Generation never started: remove the empty project we just made so it doesn't clutter the list or count toward limits.
+      if (created) api.del(`/projects/${created.id}`).catch(() => undefined);
+      setErr(e as ApiError);
+    } finally { setBusy(false); }
   };
 
   return (

@@ -9,7 +9,7 @@ import { useApi, timeAgo } from '../../lib/hooks';
 import { useColors } from '../../lib/theme';
 import type { Project } from '../../lib/types';
 import { Badge, Card, Chip, Empty, ErrorBox, Field, Row, T } from '../../components/ui';
-import { Animated, Appear, SkeletonList, listLayout } from '../../components/motion';
+import { Animated, Appear, SkeletonList } from '../../components/motion';
 
 export default function Projects() {
   const c = useColors();
@@ -36,13 +36,12 @@ export default function Projects() {
         <ErrorBox error={error} />
       </View>
       <Animated.FlatList removeClippedSubviews initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} data={data?.projects ?? []} keyExtractor={(p) => p.id} contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 10 }}
-        itemLayoutAnimation={listLayout}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} tintColor={c.primary} />}
         ListEmptyComponent={loading ? <SkeletonList rows={4} /> : <Empty icon={<FolderKanban size={32} color={c.primary} />} title="No projects" body="Create one from the Studio tab." />}
         renderItem={({ item: p, index }) => (
           <Animated.View exiting={FadeOutLeft.duration(220)}><Appear index={index}>
             <Card onPress={() => router.push(p.kind === 'logo' ? `/logo?id=${p.id}` : `/project/${p.id}`)} accessibilityLabel={p.name}><Row>
-              <View style={{ flex: 1, gap: 4 }}><T weight="600" numberOfLines={1}>{p.name}</T><Row><Badge label={p.kind} /><T muted size={12}>{p.pages.length} pages · {timeAgo(p.updatedAt)}</T></Row></View>
+              <View style={{ flex: 1, gap: 4 }}><T weight="600" numberOfLines={1}>{p.name}</T><Row><Badge label={p.kind} />{p.kind !== 'logo' && !p.pages.some((pg) => pg.currentVersionId) && <Badge label="No design yet" tone="amber" />}<T muted size={12}>{p.pages.length} pages · {timeAgo(p.updatedAt)}</T></Row></View>
               {scope !== 'shared' && <Pressable onPress={() => menu(p)} accessibilityLabel={`Actions for ${p.name}`} hitSlop={12}><MoreVertical size={20} color={c.muted} /></Pressable>}
             </Row></Card>
           </Appear></Animated.View>

@@ -3,10 +3,11 @@ import { z } from 'zod';
 import { db, C } from '../lib/firebase.js';
 import { ah, validate } from '../middleware/validate.js';
 import { Errors } from '../lib/errors.js';
+import { safeQuery } from '../lib/safeQuery.js';
 
 export const supportPublicRouter = Router();
 supportPublicRouter.get('/announcements', ah(async (_req, res) => {
-  const s = await db().collection(C.announcements).where('active', '==', true).orderBy('createdAt', 'desc').limit(10).get();
+  const s = { docs: await safeQuery(db().collection(C.announcements), { where: [['active', '==', true]], orderBy: ['createdAt', 'desc'], limit: 10 }) };
   res.json({ announcements: s.docs.map((d) => ({ id: d.id, ...d.data() })) });
 }));
 supportPublicRouter.get('/status', ah(async (_req, res) => {
@@ -22,7 +23,7 @@ supportPublicRouter.get('/status', ah(async (_req, res) => {
 export const supportRouter = Router();
 
 supportRouter.get('/tickets', ah(async (req, res) => {
-  const s = await db().collection(C.tickets).where('ownerId', '==', req.user!.uid).orderBy('updatedAt', 'desc').limit(50).get();
+  const s = { docs: await safeQuery(db().collection(C.tickets), { where: [['ownerId', '==', req.user!.uid]], orderBy: ['updatedAt', 'desc'], limit: 50 }) };
   res.json({ tickets: s.docs.map((d) => ({ id: d.id, ...d.data() })) });
 }));
 supportRouter.post('/tickets', validate(z.object({
@@ -43,7 +44,7 @@ supportRouter.post('/tickets/:id/reply', validate(z.object({ message: z.string()
 }));
 
 supportRouter.get('/notifications', ah(async (req, res) => {
-  const s = await db().collection(C.notifications).where('ownerId', '==', req.user!.uid).orderBy('createdAt', 'desc').limit(50).get();
+  const s = { docs: await safeQuery(db().collection(C.notifications), { where: [['ownerId', '==', req.user!.uid]], orderBy: ['createdAt', 'desc'], limit: 50 }) };
   res.json({ notifications: s.docs.map((d) => ({ id: d.id, ...d.data() })), unread: s.docs.filter((d) => !d.get('read')).length });
 }));
 supportRouter.post('/notifications/read', validate(z.object({ ids: z.array(z.string()).max(100).optional() })), ah(async (req, res) => {

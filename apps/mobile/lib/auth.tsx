@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { GoogleAuthProvider, onIdTokenChanged, signInWithCredential, signOut, type User } from 'firebase/auth';
 import { fbAuth, firebaseConfigured } from './firebase';
-import { api, ApiError, loadApiUrlOverride } from './api';
+import { api, ApiError, clearApiCache, loadApiUrlOverride } from './api';
 import { registerForPush, unregisterPush } from './push';
 import type { Me } from './types';
 
@@ -60,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await unregisterPush().catch(() => undefined);
     await GoogleSignin.signOut().catch(() => undefined);
     await signOut(fbAuth());
+    clearApiCache();
     setMe(null);
   };
   return <AuthCtx.Provider value={{ user, me, loading, error, signIn, logout, refresh }}>{children}</AuthCtx.Provider>;

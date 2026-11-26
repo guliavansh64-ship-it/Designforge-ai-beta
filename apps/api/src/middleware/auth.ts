@@ -23,7 +23,21 @@ declare global {
   }
 }
 
-/** Verifies the Firebase ID token (checkRevoked=true so logout-everywhere / suspension is honoured). */
+/**
+ * PERF: verifying with checkRevoked=true costs a network round-trip to Firebase Auth on EVERY request,
+ * and the suspension check costs a Firestore read. Both are cached per uid for a short window:
+ *  - signature/expiry are still verified locally on every request;
+ *  - revocation is re-checked at least every REVOKE_TTL (and immediately after an admin action on this server);
+ *  - account status is re-read at least every STATUS_TTL.
+ */
+const REVOKE_TTL = 5 * 60_000;
+const STATUS_TTL = 60_000;
+const revokeCheckedAt = new Map<string, number>();
+const statusCache = new Map<string, { suspended: boolean; at: number }>();
+/** Call after suspending/reactivating a user or revoking their sessions. */
+export function invalidateAuthCache(uid: string) { revokeCheckedAt.delete(uid); statusCache.delete(uid); }
+
+/** Verifies the Firebase ID token (revocation honoured, cached briefly; see above). */
 export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
   try {
     const header = req.headers.authorization ?? '';
@@ -31,7 +45,13 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     if (!token) throw Errors.unauth();
     let decoded;
     try {
-      decoded = await auth().verifyIdToken(token, true);
+      decoded = await auth().verifyIdToken(token, false);
+      const last = revokeCheckedAt.get(decoded.uid) ?? 0;
+      if (Date.now() - last > REVOKE_TTL) {
+        decoded = await auth().verifyIdToken(token, true);
+        if (revokeCheckedAt.size > 5000) revokeCheckedAt.clear();
+        revokeCheckedAt.set(decoded.uid, Date.now());
+      }
     } catch (e: any) {
       if (e?.code === 'auth/id-token-revoked') throw new AppError(401, ERROR_CODES.UNAUTHENTICATED, 'Session revoked. Please sign in again.');
       if (e?.code === 'auth/id-token-expired') throw new AppError(401, ERROR_CODES.UNAUTHENTICATED, 'Session expired. Please sign in again.');
@@ -45,8 +65,14 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       adminRole: decoded.adminRole as AdminRole | undefined,
     };
 
-    const userSnap = await db().collection(C.users).doc(decoded.uid).get();
-    if (userSnap.exists && userSnap.get('status') === 'suspended') {
+    let st = statusCache.get(decoded.uid);
+    if (!st || Date.now() - st.at > STATUS_TTL) {
+      const userSnap = await db().collection(C.users).doc(decoded.uid).get();
+      st = { suspended: userSnap.exists && userSnap.get('status') === 'suspended', at: Date.now() };
+      if (statusCache.size > 5000) statusCache.clear();
+      statusCache.set(decoded.uid, st);
+    }
+    if (st.suspended) {
       throw new AppError(403, ERROR_CODES.SUSPENDED, 'This account is suspended. Contact support.');
     }
     const settings = await getSystemSettings();

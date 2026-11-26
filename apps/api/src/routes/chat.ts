@@ -12,6 +12,7 @@ import { listConnectionStatus } from '../services/connections.js';
 import { htmlNodeToJsx } from '../services/exporter.js';
 import { newId } from '../lib/crypto.js';
 import { Errors } from '../lib/errors.js';
+import { safeQuery } from '../lib/safeQuery.js';
 
 /**
  * Project-aware chat assistant. Deterministic intent routing (transparent and cheap):
@@ -37,7 +38,7 @@ export function classify(message: string) {
 
 chatRouter.get('/projects/:id/chat', ah(async (req, res) => {
   const p = await loadProject(req.params.id, req.user!.uid, 'viewer');
-  const s = await db().collection(C.chat).where('projectId', '==', p.id).where('ownerId', '==', p.ownerId).orderBy('createdAt', 'asc').limitToLast(100).get();
+  const s = { docs: await safeQuery(db().collection(C.chat), { where: [['projectId', '==', p.id], ['ownerId', '==', p.ownerId]], orderBy: ['createdAt', 'asc'], limit: 100, limitToLast: true }) };
   res.json({ messages: s.docs.map((d) => ({ id: d.id, ...d.data() })) });
 }));
 

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { auth, db, C } from '../lib/firebase.js';
 import { ah, validate } from '../middleware/validate.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { invalidateAuthCache, requireAdmin } from '../middleware/auth.js';
 import { adminAudit, notify } from '../services/notify.js';
 import { invalidatePlans, listPlans, getEntitlements } from '../services/plans.js';
 import { invalidateSettingsCache, getSystemSettings } from '../services/settings.js';
@@ -11,6 +11,7 @@ import * as credits from '../services/credits.js';
 import { refundPayment } from '../services/billing.js';
 import { Errors } from '../lib/errors.js';
 import { auditHtml } from '../services/audit.js';
+import { safeQuery } from '../lib/safeQuery.js';
 
 /**
  * Admin API. Every route: requireAuth (Firebase) → requireAdmin (custom claim + active admin_users doc).
@@ -64,9 +65,9 @@ adminRouter.get('/users/:uid', ah(async (req, res) => {
   if (!u.exists) throw Errors.notFound('User');
   const [ent, balance, connections, txns, projects, pays] = await Promise.all([
     getEntitlements(uid), credits.getBalance(uid), listConnectionStatus(uid),
-    db().collection(C.creditTxns).where('ownerId', '==', uid).orderBy('createdAt', 'desc').limit(30).get(),
+    safeQuery(db().collection(C.creditTxns), { where: [['ownerId', '==', uid]], orderBy: ['createdAt', 'desc'], limit: 30 }).then((docs) => ({ docs })),
     count(db().collection(C.projects).where('ownerId', '==', uid)),
-    db().collection(C.payments).where('ownerId', '==', uid).orderBy('createdAt', 'desc').limit(20).get(),
+    safeQuery(db().collection(C.payments), { where: [['ownerId', '==', uid]], orderBy: ['createdAt', 'desc'], limit: 20 }).then((docs) => ({ docs })),
   ]);
   const { expoPushTokens, ...profile } = u.data()!;
   res.json({
@@ -83,6 +84,7 @@ adminRouter.post('/users/:uid/status', requireAdmin('admin', 'support'), validat
   await db().collection(C.users).doc(uid).update({ status: req.body.status, statusReason: req.body.reason, statusChangedAt: Date.now() });
   await auth().updateUser(uid, { disabled: req.body.status === 'suspended' });
   if (req.body.status === 'suspended') await auth().revokeRefreshTokens(uid);
+  invalidateAuthCache(uid);
   await adminAudit(req.user!.uid, `user.${req.body.status}`, uid, { reason: req.body.reason });
   res.json({ ok: true });
 }));
@@ -137,17 +139,15 @@ adminRouter.put('/plans/:id', requireAdmin('admin'), validate(z.object({
 }));
 
 adminRouter.get('/subscriptions', validate(z.object({ status: z.string().optional(), planId: z.string().optional() }), 'query'), ah(async (req, res) => {
-  let q: FirebaseFirestore.Query = db().collection(C.subscriptions);
-  if (req.query.status) q = q.where('status', '==', req.query.status);
-  if (req.query.planId) q = q.where('planId', '==', req.query.planId);
-  const s = await q.orderBy('updatedAt', 'desc').limit(100).get();
+  const where: [string, '==', unknown][] = [];
+  if (req.query.status) where.push(['status', '==', req.query.status]);
+  if (req.query.planId) where.push(['planId', '==', req.query.planId]);
+  const s = { docs: await safeQuery(db().collection(C.subscriptions), { where, orderBy: ['updatedAt', 'desc'], limit: 100 }) };
   res.json({ subscriptions: s.docs.map((d) => ({ id: d.id, ...d.data() })) });
 }));
 
 adminRouter.get('/payments', validate(z.object({ status: z.string().optional() }), 'query'), ah(async (req, res) => {
-  let q: FirebaseFirestore.Query = db().collection(C.payments);
-  if (req.query.status) q = q.where('status', '==', req.query.status);
-  const s = await q.orderBy('createdAt', 'desc').limit(100).get();
+  const s = { docs: await safeQuery(db().collection(C.payments), { where: req.query.status ? [['status', '==', req.query.status]] : [], orderBy: ['createdAt', 'desc'], limit: 100 }) };
   res.json({ payments: s.docs.map((d) => ({ id: d.id, ...d.data() })) });
 }));
 adminRouter.post('/payments/:orderId/refund', requireAdmin('admin', 'finance'), validate(z.object({ amountPaise: z.number().int().min(100).optional(), reason: z.string().min(3).max(300) })), ah(async (req, res) => {
@@ -227,9 +227,7 @@ adminRouter.patch('/announcements/:id', requireAdmin('admin'), validate(z.object
 
 // ── Support
 adminRouter.get('/tickets', validate(z.object({ status: z.enum(['open', 'pending', 'resolved']).optional() }), 'query'), ah(async (req, res) => {
-  let q: FirebaseFirestore.Query = db().collection(C.tickets);
-  if (req.query.status) q = q.where('status', '==', req.query.status);
-  const s = await q.orderBy('updatedAt', 'desc').limit(100).get();
+  const s = { docs: await safeQuery(db().collection(C.tickets), { where: req.query.status ? [['status', '==', req.query.status]] : [], orderBy: ['updatedAt', 'desc'], limit: 100 }) };
   res.json({ tickets: s.docs.map((d) => ({ id: d.id, ...d.data() })) });
 }));
 adminRouter.post('/tickets/:id/reply', requireAdmin('admin', 'support'), validate(z.object({ message: z.string().min(1).max(5000), status: z.enum(['open', 'pending', 'resolved']).default('pending') })), ah(async (req, res) => {
@@ -245,7 +243,7 @@ adminRouter.post('/tickets/:id/reply', requireAdmin('admin', 'support'), validat
 
 // ── Errors & audit
 adminRouter.get('/errors', ah(async (_req, res) => {
-  const s = await db().collection(C.generations).where('status', '==', 'failed').orderBy('createdAt', 'desc').limit(100).get();
+  const s = { docs: await safeQuery(db().collection(C.generations), { where: [['status', '==', 'failed']], orderBy: ['createdAt', 'desc'], limit: 100 }) };
   res.json({ errors: s.docs.map((d) => ({ id: d.id, ...d.data() })) });
 }));
 adminRouter.get('/audit-logs', ah(async (_req, res) => {

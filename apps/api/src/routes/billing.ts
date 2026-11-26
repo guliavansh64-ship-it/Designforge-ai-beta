@@ -9,6 +9,7 @@ import { cancelSubscription, createAutoRenewSubscription, createOrder, verifyAnd
 import * as credits from '../services/credits.js';
 import { AppError, Errors } from '../lib/errors.js';
 import { env } from '../config.js';
+import { safeQuery } from '../lib/safeQuery.js';
 
 export const billingPublicRouter = Router();
 billingPublicRouter.get('/plans', ah(async (_req, res) => res.json({ plans: await listPlans(), packs: CREDIT_PACKS, razorpayKeyId: env.RAZORPAY_KEY_ID ?? null })));
@@ -19,8 +20,8 @@ billingRouter.get('/billing/summary', ah(async (req, res) => {
   const uid = req.user!.uid;
   const [ent, balance, txns, pays] = await Promise.all([
     getEntitlements(uid), credits.getBalance(uid),
-    db().collection(C.creditTxns).where('ownerId', '==', uid).orderBy('createdAt', 'desc').limit(50).get(),
-    db().collection(C.payments).where('ownerId', '==', uid).orderBy('createdAt', 'desc').limit(50).get(),
+    safeQuery(db().collection(C.creditTxns), { where: [['ownerId', '==', uid]], orderBy: ['createdAt', 'desc'], limit: 50 }).then((docs) => ({ docs })),
+    safeQuery(db().collection(C.payments), { where: [['ownerId', '==', uid]], orderBy: ['createdAt', 'desc'], limit: 50 }).then((docs) => ({ docs })),
   ]);
   res.json({
     plan: ent.plan, subscription: ent.sub, credits: balance,
@@ -31,7 +32,7 @@ billingRouter.get('/billing/summary', ah(async (req, res) => {
 
 billingRouter.get('/billing/usage', ah(async (req, res) => {
   const since = Date.now() - 30 * 86400_000;
-  const s = await db().collection(C.creditTxns).where('ownerId', '==', req.user!.uid).where('createdAt', '>=', since).orderBy('createdAt', 'asc').get();
+  const s = { docs: await safeQuery(db().collection(C.creditTxns), { where: [['ownerId', '==', req.user!.uid], ['createdAt', '>=', since]], orderBy: ['createdAt', 'asc'], fallbackCap: 2000 }) };
   const byDay: Record<string, number> = {};
   for (const d of s.docs) {
     const t = d.data();

@@ -55,8 +55,10 @@ export default function StudioHome({ mode }: { mode: Mode }) {
 
   const start = async () => {
     setBusy(true); setError(null);
+    let created: Project | null = null;
     try {
       const { project } = await api.post<{ project: Project }>('/projects', { name: name.trim() || (prompt.trim().split(/[.,\n]/)[0].slice(0, 60) || 'Untitled design'), kind, deviceType: device });
+      created = project;
       const firstPage = project.pages[0];
       if (isSite && pages[0] && pages[0] !== firstPage.name) await api.patch(`/projects/${project.id}/pages/${firstPage.id}`, { name: pages[0] });
       const { job } = await api.post<{ job: { id: string } }>(`/projects/${project.id}/generate`, {
@@ -65,6 +67,8 @@ export default function StudioHome({ mode }: { mode: Mode }) {
       if (isSite && pages.length > 1) sessionStorage.setItem(`df_pending_pages_${project.id}`, JSON.stringify(pages.slice(1)));
       nav(`/studio/${project.id}?job=${job.id}`);
     } catch (e) {
+      // Generation never started: remove the empty project so it doesn't count toward the plan limit.
+      if (created) api.del(`/projects/${created.id}`).catch(() => undefined);
       setError(e as ApiError);
       if ((e as ApiError).code === 'UI_PREVIEW') toast('info', (e as ApiError).message);
     } finally { setBusy(false); }

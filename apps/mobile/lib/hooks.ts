@@ -1,15 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError } from './api';
+import { api, ApiError, peekCache } from './api';
 import type { Job } from './types';
 
+/**
+ * GET hook with stale-while-revalidate: shows cached data immediately (no skeleton flash when you
+ * revisit a screen), refreshes in the background, and ignores responses for a path that is no longer current.
+ */
 export function useApi<T>(path: string | null, deps: unknown[] = []) {
-  const [data, setData] = useState<T | null>(null);
+  const [data, setData] = useState<T | null>(() => (path ? peekCache<T>(path) ?? null : null));
   const [error, setError] = useState<ApiError | null>(null);
-  const [loading, setLoading] = useState(!!path);
+  const [loading, setLoading] = useState(!!path && peekCache(path) === undefined);
+  const current = useRef(path); current.current = path;
   const load = useCallback(async () => {
     if (!path) return;
-    setLoading(true);
-    try { setData(await api.get<T>(path)); setError(null); } catch (e) { setError(e as ApiError); } finally { setLoading(false); }
+    const cached = peekCache<T>(path);
+    if (cached !== undefined) setData(cached); else setLoading(true);
+    try {
+      const d = await api.get<T>(path);
+      if (current.current === path) { setData(d); setError(null); }
+    } catch (e) { if (current.current === path) setError(e as ApiError); } finally { if (current.current === path) setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, ...deps]);
   useEffect(() => { load(); }, [load]);

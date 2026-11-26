@@ -10,6 +10,8 @@ import { auditHtml } from '../services/audit.js';
 import { newId } from '../lib/crypto.js';
 import { AppError, Errors } from '../lib/errors.js';
 import { auth } from '../lib/firebase.js';
+import { safeQuery } from '../lib/safeQuery.js';
+import { assertProjectQuota } from '../services/plans.js';
 
 export const projectsRouter = Router();
 
@@ -39,21 +41,19 @@ projectsRouter.get('/projects', validate(z.object({
       .sort((a, b) => (sort === 'name' ? String(a[key]).localeCompare(String(b[key])) : (b[key] ?? 0) - (a[key] ?? 0)));
     return res.json({ projects: list.slice(0, limit), nextCursor: null });
   }
-  let query: FirebaseFirestore.Query = db().collection(C.projects).where('ownerId', '==', uid);
-  query = query.where('archived', '==', archived === 'true');
-  if (kind) query = query.where('kind', '==', kind);
-  if (folder) query = query.where('folder', '==', folder);
+  const where: [string, any, unknown][] = [['ownerId', '==', uid], ['archived', '==', archived === 'true']];
+  if (kind) where.push(['kind', '==', kind]);
+  if (folder) where.push(['folder', '==', folder]);
+  let orderBy: [string, 'asc' | 'desc'];
   if (q) {
     const ql = q.toLowerCase();
-    query = query.where('nameLower', '>=', ql).where('nameLower', '<=', ql + '\uf8ff').orderBy('nameLower');
+    where.push(['nameLower', '>=', ql], ['nameLower', '<=', ql + '\uf8ff']);
+    orderBy = ['nameLower', 'asc'];
   } else {
-    query = query.orderBy(sort === 'name' ? 'nameLower' : sort === 'created' ? 'createdAt' : 'updatedAt', sort === 'name' ? 'asc' : 'desc');
+    orderBy = [sort === 'name' ? 'nameLower' : sort === 'created' ? 'createdAt' : 'updatedAt', sort === 'name' ? 'asc' : 'desc'];
   }
-  if (cursor) {
-    const c = await db().collection(C.projects).doc(cursor).get();
-    if (c.exists) query = query.startAfter(c);
-  }
-  const snap = await query.limit(limit + 1).get();
+  const found = await safeQuery(db().collection(C.projects), { where, orderBy, limit: limit + 1, startAfterId: cursor });
+  const snap = { docs: found, size: found.length };
   const docs = snap.docs.slice(0, limit).map((d) => ({ id: d.id, ...d.data() }));
   res.json({ projects: docs, nextCursor: snap.size > limit ? docs[docs.length - 1].id : null });
 }));
@@ -67,8 +67,7 @@ projectsRouter.post('/projects', validate(z.object({
 })), ah(async (req, res) => {
   const uid = req.user!.uid;
   const { plan } = await getEntitlements(uid);
-  const count = (await db().collection(C.projects).where('ownerId', '==', uid).where('archived', '==', false).count().get()).data().count;
-  if (count >= plan.maxProjects) throw new AppError(403, 'PROJECT_LIMIT_REACHED', `Your ${plan.name} plan allows ${plan.maxProjects} active projects. Archive one or upgrade.`, 'upgrade_plan');
+  await assertProjectQuota(uid, plan);
   if (req.body.kind === 'website' && !plan.features.includes('website_studio')) throw Errors.feature('website studio');
   if (req.body.kind === 'logo' && !plan.features.includes('logo_studio')) throw Errors.feature('logo studio');
   const id = newId('p_');
@@ -158,9 +157,9 @@ projectsRouter.delete('/projects/:id/pages/:pageId', ah(async (req, res) => {
 // ── Versions
 projectsRouter.get('/projects/:id/versions', validate(z.object({ pageId: z.string().optional(), limit: z.coerce.number().int().min(1).max(100).default(30) }), 'query'), ah(async (req, res) => {
   const p = await loadProject(req.params.id, req.user!.uid, 'viewer');
-  let q: FirebaseFirestore.Query = db().collection(C.versions).where('projectId', '==', p.id).where('ownerId', '==', p.ownerId);
-  if (req.query.pageId) q = q.where('pageId', '==', req.query.pageId);
-  const snap = await q.orderBy('createdAt', 'desc').limit(Number(req.query.limit)).get();
+  const where: [string, any, unknown][] = [['projectId', '==', p.id], ['ownerId', '==', p.ownerId]];
+  if (req.query.pageId) where.push(['pageId', '==', req.query.pageId]);
+  const snap = { docs: await safeQuery(db().collection(C.versions), { where, orderBy: ['createdAt', 'desc'], limit: Number(req.query.limit), fallbackCap: 500 }) };
   // Omit heavy html in list view.
   res.json({ versions: snap.docs.map((d) => { const { html, ...v } = d.data(); return { ...v, hasHtml: !!html || !!v.htmlStorageUrl }; }) });
 }));

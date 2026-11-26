@@ -2,7 +2,8 @@ import type { ConnectionStatus, Provider } from '@designforge/shared';
 import { CredentialVault, VaultError, keyHint } from '../lib/crypto.js';
 import { db, C, FieldValue } from '../lib/firebase.js';
 import { env } from '../config.js';
-import { Errors } from '../lib/errors.js';
+import { AppError, Errors } from '../lib/errors.js';
+import { ERROR_CODES } from '@designforge/shared';
 
 let vault: CredentialVault | undefined;
 export function getVault(): CredentialVault {
@@ -51,8 +52,10 @@ export async function getCredential(uid: string, provider: Provider): Promise<st
   } catch (e) {
     if (!(e instanceof VaultError)) throw e;
     // Key rotated without a decrypt window, or record tampered with: never guess, ask the user to reconnect.
-    await markConnection(uid, provider, 'invalid', 'Stored key can no longer be decrypted. Please reconnect.');
-    throw provider === 'stitch' ? Errors.stitchNotConnected() : Errors.geminiNotConnected();
+    await markConnection(uid, provider, 'invalid', 'This server could not read your saved key (its ENCRYPTION_KEY changed). Please reconnect.');
+    const name = provider === 'stitch' ? 'Stitch' : 'Gemini';
+    throw new AppError(412, provider === 'stitch' ? ERROR_CODES.STITCH_NOT_CONNECTED : ERROR_CODES.GEMINI_NOT_CONNECTED,
+      `Your saved ${name} key was encrypted by a different server setup and can't be read here. Open Integrations and reconnect ${name} once; it will work from then on.`, 'open_integrations');
   }
   if (v.needsRotation(data.encryptedKey)) {
     // Lazy re-encryption with the current key (best effort; a failure here must not block the request).
