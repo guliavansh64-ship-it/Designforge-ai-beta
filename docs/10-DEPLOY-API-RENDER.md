@@ -19,7 +19,7 @@ What's left is getting the API online so the app has a server URL.
 
 ## 2. Create the Render service
 1. Go to https://dashboard.render.com, then **New → Blueprint** → connect GitHub → pick the `designforge-ai` repo.
-2. Render reads `render.yaml` and proposes the **designforge-api** service (free plan, Singapore region). It will ask for the values marked `sync: false`. You can leave them blank for now and fill them in the next step.
+2. Render reads `render.yaml` and proposes the **designforge-api** service (free plan, Singapore region). It will ask for the values marked `sync: false`. **Fill them in here** (section 3 lists them). If you leave them blank, the first deploy fails at startup. That is harmless: fill them in later and click **Manual Deploy**.
 3. Click **Apply**.
 
 ## 3. Paste the environment variables
@@ -53,6 +53,16 @@ npx firebase-tools deploy --only firestore:indexes
 cd apps/api && npm install && npm run make-admin -- you@gmail.com owner
 ```
 This needs `apps/api/.env`, which contains the service account. Download it from the workspace and don't commit it.
+
+## Troubleshooting: "Failed deploy" / build exits with `TS7016 Could not find a declaration file for module 'express'`
+
+Render sets `NODE_ENV=production`, so a plain `npm ci` skips dev dependencies (TypeScript and `@types/*`) and the build fails.
+The `render.yaml` in this repo already uses `npm ci --include=dev ...`. If you created the service by hand, set:
+
+- **Build Command:** `npm ci --include=dev --workspace packages/shared --workspace apps/api --include-workspace-root && npm --workspace packages/shared run build && npm --workspace apps/api run build`
+- **Start Command:** `npm --workspace apps/api run start`
+
+If the build succeeds but the deploy still fails, open **Logs**. A line starting with `Invalid configuration` means one of the 6 secret variables (section 3) is empty or wrong.
 
 ## 7. Updating the deploy (do this after every code update)
 
