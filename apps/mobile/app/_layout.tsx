@@ -42,6 +42,7 @@ function Gate() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: 'fade' }} />
       <Stack.Screen name="login" options={{ headerShown: false, animation: 'fade' }} />
       <Stack.Screen name="project/[id]" options={{ title: 'Project' }} />
+      <Stack.Screen name="preview/[id]" options={{ headerShown: false, animation: 'fade_from_bottom' }} />
       <Stack.Screen name="integrations" options={{ title: 'Integrations' }} />
       <Stack.Screen name="billing" options={{ title: 'Plans & credits' }} />
       <Stack.Screen name="logo" options={{ title: 'Logo Studio' }} />

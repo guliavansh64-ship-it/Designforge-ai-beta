@@ -54,6 +54,45 @@ exportsRouter.post('/projects/:id/export', validate(z.object({
   }
 }));
 
+/**
+ * Single-version downloads (free — the user already owns and sees this content):
+ *   ?format=html → the page as one self-contained .html file
+ *   ?format=png  → the Stitch screenshot of the screen
+ */
+exportsRouter.get('/versions/:vid/download', validate(z.object({ format: z.enum(['html', 'png']).default('html') }), 'query'), ah(async (req, res) => {
+  const uid = req.user!.uid;
+  const v: any = await getVersion(req.params.vid, uid);
+  const p = await loadProject(v.projectId, uid, 'viewer');
+  const page = p.pages.find((x) => x.id === v.pageId);
+  const base = `${slug(p.name)}-${slug(page?.name ?? 'screen')}`;
+  res.setHeader('access-control-expose-headers', 'content-disposition');
+  if (req.query.format === 'png') {
+    const url: string | undefined = v.imageUrl;
+    if (!url) throw Errors.validation('This version has no screenshot. Regenerate it or download the HTML instead.');
+    let data: Buffer; let mime = 'image/png';
+    const m = /^\/api\/assets\/([A-Za-z0-9_-]+)/.exec(url);
+    if (m) {
+      const b = await getBlob(m[1], v.ownerId);
+      if ('data' in b) { data = b.data; mime = b.mime; }
+      else { const r = await fetch(b.redirect); data = Buffer.from(await r.arrayBuffer()); mime = r.headers.get('content-type') ?? mime; }
+    } else if (/^https:\/\//.test(url)) {
+      const r = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      if (!r.ok) throw new AppError(502, 'DOWNLOAD_FAILED', 'Could not fetch the screenshot.');
+      data = Buffer.from(await r.arrayBuffer()); mime = r.headers.get('content-type') ?? mime;
+    } else throw Errors.validation('Screenshot unavailable.');
+    const ext = mime.includes('jpeg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png';
+    res.setHeader('content-type', mime);
+    res.setHeader('content-disposition', `attachment; filename="${base}.${ext}"`);
+    res.send(data);
+    return;
+  }
+  if (!v.html) throw Errors.validation('This version has no HTML.');
+  await track('download_html_page');
+  res.setHeader('content-type', 'text/html; charset=utf-8');
+  res.setHeader('content-disposition', `attachment; filename="${base}.html"`);
+  res.send(v.html);
+}));
+
 /** Brand kit ZIP for a logo concept version. */
 exportsRouter.get('/versions/:vid/brand-kit', ah(async (req, res) => {
   const uid = req.user!.uid;

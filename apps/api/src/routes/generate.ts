@@ -11,6 +11,8 @@ import { cancelJob, enqueue } from '../services/jobs.js';
 import { AppError, Errors } from '../lib/errors.js';
 import { getSystemSettings } from '../services/settings.js';
 import { safeQuery } from '../lib/safeQuery.js';
+import { enhance } from '../services/promptEnhancer.js';
+import * as credits from '../services/credits.js';
 
 /**
  * AI generation endpoints. All return 202 + a job; clients poll GET /jobs/:id.
@@ -23,6 +25,14 @@ export const generateRouter = Router();
 const device = z.enum(['MOBILE', 'DESKTOP', 'TABLET', 'AGNOSTIC']);
 // Accepts current IDs and retired 0.3.x IDs from older app versions; always yields a valid Stitch model.
 const model = z.string().max(40).optional().transform(normalizeStitchModel);
+const hex = z.string().regex(/^#[0-9A-Fa-f]{3,8}$/);
+/** A plan previewed via POST /prompt/enhance may be sent back so generation uses exactly what the user saw. */
+const planSchema = z.object({
+  enhancer: z.enum(['gemini', 'built-in']), appName: z.string().trim().min(1).max(60), category: z.string().max(40), isFullApp: z.boolean(),
+  theme: z.object({ mood: z.string().max(200), primary: hex, accent: hex, background: hex, dark: z.boolean(), headingFont: z.string().max(60), bodyFont: z.string().max(60), corners: z.string().max(120) }),
+  designBrief: z.string().max(1500), navigation: z.array(z.string().max(40)).max(6),
+  screens: z.array(z.object({ name: z.string().trim().min(1).max(60), prompt: z.string().trim().min(10).max(2500) })).min(1).max(6),
+});
 const idem = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, 'idempotencyKey must be 8–64 url-safe chars');
 
 async function preflight(uid: string, provider: 'stitch' | 'gemini', _m?: string) {
@@ -41,18 +51,44 @@ generateRouter.post('/projects/:id/generate', generationLimiter, validate(z.obje
   prompt: z.string().trim().min(5).max(4000), deviceType: device.optional(), model,
   pageId: z.string().optional(), newPageName: z.string().max(60).optional(),
   category: z.string().max(40).optional(), style: z.string().max(200).optional(), idempotencyKey: idem,
+  // Prompt enhancement + full-app generation. Absent → legacy single-screen behaviour (older app builds).
+  enhance: z.boolean().optional(), mode: z.enum(['auto', 'single', 'app']).optional(),
+  maxScreens: z.number().int().min(2).max(6).optional(), plan: planSchema.optional(),
+  pageNames: z.array(z.string().trim().min(1).max(40)).max(6).optional(),
 })), ah(async (req, res) => {
   const uid = req.user!.uid;
   const project = await loadProject(req.params.id, uid, 'owner');
   const pf = await preflight(uid, 'stitch', req.body.model);
   if (project.kind === 'website' && !pf.plan.features.includes('website_studio')) throw Errors.feature('website studio');
   const deviceType = req.body.deviceType ?? project.deviceType;
+  // A full app is charged per screen: screen 1 now, every further screen when it starts. Make sure
+  // the user can afford the whole app up front so it doesn't stop half-way.
+  if (req.body.mode === 'app' || (req.body.plan && req.body.plan.screens.length > 1)) {
+    const need = credits.costOf('generate_flash', req.body.plan?.screens.length ?? req.body.maxScreens ?? 5);
+    const bal = await credits.getBalance(uid);
+    if (bal < need) throw Errors.credits(need, bal);
+  }
   const job = await enqueue({
     ownerId: uid, projectId: project.id, type: 'generate', prompt: req.body.prompt,
     payload: { ...req.body, deviceType }, op: 'generate_flash',
     idempotencyKey: req.body.idempotencyKey, priority: pf.priority, deviceType, model: req.body.model,
   });
   res.status(202).json({ job });
+}));
+
+/**
+ * Preview the enhanced prompt / app plan without generating anything (no credits).
+ * Uses the caller's own Gemini key when connected, otherwise the built-in planner.
+ */
+generateRouter.post('/prompt/enhance', generationLimiter, validate(z.object({
+  prompt: z.string().trim().min(3).max(4000), kind: z.enum(['ui', 'website']).default('ui'), deviceType: device.default('MOBILE'),
+  style: z.string().max(200).optional(), category: z.string().max(40).optional(),
+  mode: z.enum(['auto', 'single', 'app']).default('auto'), maxScreens: z.number().int().min(2).max(6).default(5),
+  pageNames: z.array(z.string().trim().min(1).max(40)).max(6).optional(),
+})), ah(async (req, res) => {
+  const b = req.body;
+  const plan = await enhance(req.user!.uid, { prompt: b.prompt, kind: b.kind, device: b.deviceType, style: b.style, category: b.category, mode: b.mode, maxScreens: b.maxScreens, pageNames: b.pageNames });
+  res.json({ plan, cost: credits.costOf('generate_flash', plan.screens.length) });
 }));
 
 generateRouter.post('/projects/:id/edit', generationLimiter, validate(z.object({

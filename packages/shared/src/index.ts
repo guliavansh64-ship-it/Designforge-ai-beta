@@ -124,8 +124,26 @@ export interface GenerationJob {
   creditTxnId?: string;
   resultVersionIds?: string[];
   error?: { code: string; message: string };
+  /** Prompt enhancement + full-app plan (generate jobs). */
+  plan?: DesignPlanSummary;
+  screensTotal?: number;
+  screensDone?: number;
+  /** Non-fatal problems (e.g. one screen of a full app failed and was refunded). */
+  warnings?: string[];
   createdAt: number;
   updatedAt: number;
+}
+
+export type GenerationMode = 'auto' | 'single' | 'app';
+export interface DesignPlanSummary {
+  enhancer: 'gemini' | 'built-in';
+  appName: string;
+  category: string;
+  isFullApp: boolean;
+  theme: { mood: string; primary: string; accent: string; background: string; dark: boolean; headingFont: string; bodyFont: string; corners: string };
+  designBrief: string;
+  navigation: string[];
+  screens: { name: string; prompt: string }[];
 }
 
 export interface Project {

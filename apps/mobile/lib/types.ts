@@ -11,4 +11,9 @@ export interface Page { id: string; name: string; currentVersionId?: string; sti
 export interface Project { id: string; ownerId: string; name: string; kind: 'ui' | 'website' | 'logo' | 'improve'; archived: boolean; folder?: string; deviceType: Device; pages: Page[]; createdAt: number; updatedAt: number; access?: 'owner' | 'editor' | 'viewer' }
 export interface Audit { score: number; checks: { id: string; label: string; passed: boolean; severity: string; detail: string }[] }
 export interface Version { id: string; projectId: string; pageId: string; source: string; prompt?: string; html: string; imageUrl?: string; audit?: Audit; createdAt: number; logo?: { style: string; palette: string[]; assets: Record<string, string | null>; typography: { heading: string; body: string; why: string } } }
-export interface Job { id: string; type: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'; stage?: string; progress: number; creditsReserved: number; resultVersionIds?: string[]; error?: { code: string; message: string }; improvementHistory?: { iteration: number; before: number; after: number; fixed: string[]; regressed: string[] }[] }
+export interface DesignPlan {
+  enhancer: 'gemini' | 'built-in'; appName: string; category: string; isFullApp: boolean;
+  theme: { mood: string; primary: string; accent: string; background: string; dark: boolean; headingFont: string; bodyFont: string; corners: string };
+  designBrief: string; navigation: string[]; screens: { name: string; prompt: string }[];
+}
+export interface Job { plan?: DesignPlan; screensTotal?: number; screensDone?: number; warnings?: string[]; id: string; type: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'; stage?: string; progress: number; creditsReserved: number; resultVersionIds?: string[]; error?: { code: string; message: string }; improvementHistory?: { iteration: number; before: number; after: number; fixed: string[]; regressed: string[] }[] }

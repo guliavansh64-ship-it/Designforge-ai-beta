@@ -123,19 +123,24 @@ export const api = {
   patch: <T,>(p: string, b?: unknown) => mutate<T>('PATCH', p, b ?? {}),
   del: <T,>(p: string, b?: unknown) => mutate<T>('DELETE', p, b),
   /** Downloads a ZIP (export / brand kit) to app storage and opens the Android share sheet. */
-  async downloadAndShare(method: 'GET' | 'POST', path: string, body: unknown, filename: string) {
+  async downloadAndShare(method: 'GET' | 'POST', path: string, body: unknown, filename: string, mimeType = 'application/zip') {
     const token = await idToken();
     const target = `${FileSystem.cacheDirectory}${filename.replace(/[^a-z0-9._-]/gi, '_')}`;
     if (method === 'GET') {
       const r = await FileSystem.downloadAsync(`${apiUrl}/api${path}`, target, { headers: token ? { authorization: `Bearer ${token}` } : {} });
-      if (r.status >= 400) throw new ApiError(r.status, 'DOWNLOAD_FAILED', 'Download failed');
+      if (r.status >= 400) {
+        const txt = await FileSystem.readAsStringAsync(target).catch(() => '');
+        await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => undefined);
+        let j: any = {}; try { j = JSON.parse(txt); } catch { /* not JSON */ }
+        throw new ApiError(r.status, j?.error?.code ?? 'DOWNLOAD_FAILED', j?.error?.message ?? 'Download failed', j?.error?.action);
+      }
     } else {
       const res = await fetch(`${apiUrl}/api${path}`, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
       if (!res.ok) { const j = await res.json().catch(() => ({})); throw new ApiError(res.status, j?.error?.code ?? 'EXPORT_FAILED', j?.error?.message ?? 'Export failed', j?.error?.action); }
       const buf = await res.arrayBuffer();
       await FileSystem.writeAsStringAsync(target, toBase64(new Uint8Array(buf)), { encoding: FileSystem.EncodingType.Base64 });
     }
-    if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target, { mimeType: 'application/zip', dialogTitle: filename });
+    if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target, { mimeType, dialogTitle: filename });
     return target;
   },
 };

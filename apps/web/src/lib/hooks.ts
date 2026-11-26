@@ -18,18 +18,19 @@ export function useApi<T>(path: string | null, deps: unknown[] = []) {
 }
 
 /** Polls a generation job until it reaches a terminal state. Backs off to save free-tier reads. */
-export function useJob(jobId: string | null, onDone?: (job: GenerationJob) => void) {
+export function useJob(jobId: string | null, onDone?: (job: GenerationJob, sawRunning: boolean) => void) {
   const [job, setJob] = useState<GenerationJob | null>(null);
   const done = useRef(onDone); done.current = onDone;
   useEffect(() => {
     if (!jobId) { setJob(null); return; }
-    let stop = false; let delay = 1500; let t: ReturnType<typeof setTimeout>;
+    let stop = false; let delay = 1500; let t: ReturnType<typeof setTimeout>; let live = false;
     const tick = async () => {
       try {
         const { job: j } = await api.get<{ job: GenerationJob }>(`/jobs/${jobId}`);
         if (stop) return;
         setJob(j);
-        if (['succeeded', 'failed', 'cancelled'].includes(j.status)) { done.current?.(j); return; }
+        if (['succeeded', 'failed', 'cancelled'].includes(j.status)) { done.current?.(j, live); return; }
+        live = true;
       } catch { /* transient network issue → keep polling */ }
       delay = Math.min(delay * 1.25, 5000);
       t = setTimeout(tick, delay);

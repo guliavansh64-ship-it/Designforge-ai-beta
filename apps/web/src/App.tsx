@@ -20,6 +20,7 @@ const Integrations = lazy(() => import('./pages/Integrations'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Help = lazy(() => import('./pages/Help'));
 const Admin = lazy(() => import('./pages/admin/Admin'));
+const FullPreview = lazy(() => import('./pages/FullPreview'));
 
 const Loading = () => <div className="grid h-full min-h-[50vh] place-items-center"><Spinner className="h-8 w-8" /></div>;
 
@@ -38,6 +39,7 @@ export function App() {
       <Routes>
         <Route path="/login" element={loading ? <Loading /> : me ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/admin/*" element={<Protected admin><Admin /></Protected>} />
+        <Route path="/preview/:projectId" element={<Protected><FullPreview /></Protected>} />
         <Route element={<Protected><Layout /></Protected>}>
           <Route index element={<Dashboard />} />
           <Route path="studio" element={<StudioHome mode="any" />} />

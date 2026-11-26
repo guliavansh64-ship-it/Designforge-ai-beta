@@ -7,6 +7,7 @@ import { useColors } from '../lib/theme';
 import type { Job } from '../lib/types';
 import { Button, Card, Progress, Row, T } from './ui';
 import { Animated, Pulse, popIn } from './motion';
+import { PlanCard } from './PlanCard';
 
 function JobCardImpl({ job, onDismiss }: { job: Job; onDismiss?: () => void }) {
   const c = useColors();
@@ -30,6 +31,8 @@ function JobCardImpl({ job, onDismiss }: { job: Job; onDismiss?: () => void }) {
         </Row>
         {!terminal && <Progress value={job.progress} />}
         {!terminal && job.progress >= 20 && <Animated.View entering={FadeInDown}><T muted size={12}>Stitch usually takes 30–120 s. You can leave — we'll send a notification.</T></Animated.View>}
+        {job.plan && job.type === 'generate' && <PlanCard plan={job.plan} compact={terminal} done={job.screensDone ?? 0} active={!terminal} failed={job.status === 'failed'} />}
+        {job.warnings?.map((w, i) => <T key={i} size={12} style={{ color: c.amber }}>{w}</T>)}
         {job.error && <Animated.View entering={FadeInDown}><T size={13} style={{ color: c.red }}>{job.error.message}</T></Animated.View>}
         {job.improvementHistory?.map((h, i) => (
           <Animated.View key={h.iteration} entering={FadeInDown.delay(i * 80)}>
@@ -37,7 +40,7 @@ function JobCardImpl({ job, onDismiss }: { job: Job; onDismiss?: () => void }) {
           </Animated.View>
         ))}
         <Row style={{ justifyContent: 'space-between' }}>
-          <T muted size={12}>{job.creditsReserved} credits{job.status === 'failed' || job.status === 'cancelled' ? ' · refunded' : ''}</T>
+          <T muted size={12}>{job.screensTotal && job.screensTotal > 1 ? `${job.screensDone ?? 0}/${job.screensTotal} screens · ${(job.screensDone || 1) * job.creditsReserved} credits` : `${job.creditsReserved} credits`}{job.status === 'failed' || job.status === 'cancelled' ? ' · refunded' : ''}</T>
           {!terminal ? <Button small variant="secondary" title="Cancel" onPress={() => api.post(`/jobs/${job.id}/cancel`).catch(() => undefined)} /> : onDismiss && <Button small variant="ghost" title="Dismiss" onPress={onDismiss} />}
         </Row>
       </Card>

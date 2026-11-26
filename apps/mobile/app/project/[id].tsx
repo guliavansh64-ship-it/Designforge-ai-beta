@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { showAlert, toast } from '../../components/Dialog';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { Smartphone, Tablet, Monitor, Wand2, Shuffle, Sparkles, History, Download, ClipboardCheck, CheckCircle2, XCircle, X, Lock } from 'lucide-react-native';
+import { Smartphone, Tablet, Monitor, Wand2, Shuffle, Sparkles, History, Download, ClipboardCheck, CheckCircle2, XCircle, X, Lock, Maximize2, Image as ImageIcon, FileCode2 } from 'lucide-react-native';
 import { api, newKey, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useApi, useJob, timeAgo } from '../../lib/hooks';
@@ -74,17 +74,22 @@ export default function ProjectScreen() {
   }, [page?.currentVersionId]);
 
   const versions = useApi<{ versions: Version[] }>(pageId ? `/projects/${id}/versions?pageId=${pageId}&limit=30` : null, [vkey]);
-  const job = useJob(jobId, async (j: Job) => {
+  const job = useJob(jobId, async (j: Job, sawRunning: boolean) => {
     await Promise.all([load(), refresh()]); setVkey((k) => k + 1);
     if (j.status === 'succeeded') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-      if (j.type !== 'variants') toast(j.type === 'edit' || j.type === 'chat_edit' ? 'Changes applied ✨' : 'Your design is ready ✨', 'success');
+      const multi = (j.resultVersionIds?.length ?? 0) > 1;
+      if (j.type !== 'variants') toast(j.type === 'edit' || j.type === 'chat_edit' ? 'Changes applied ✨' : multi ? `Your app is ready — ${j.resultVersionIds!.length} screens ✨` : 'Your design is ready ✨', 'success');
+      // A fresh generation opens straight into the full-screen device preview.
+      if (j.type === 'generate' && sawRunning) router.push(`/preview/${id}`);
     } else if (j.status === 'failed') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
     }
     if (j.status === 'succeeded' && j.type === 'variants' && j.resultVersionIds?.[0]) { setTab('versions'); showAlert('Variations ready', 'Open them in Versions and tap “Use” on your favourite.'); }
   });
   const running = job && !['succeeded', 'failed', 'cancelled'].includes(job.status);
+  // Full-app jobs: show each screen as soon as it is ready instead of waiting for the whole app.
+  useEffect(() => { if (job?.screensDone) load(); }, [job?.screensDone, load]);
 
   const run = async (path: string, body: Record<string, unknown>, key: string) => {
     setBusy(key); setErr(null);
@@ -97,6 +102,13 @@ export default function ProjectScreen() {
   const doExport = async (format: 'html' | 'react') => {
     setBusy(format); setErr(null);
     try { await api.downloadAndShare('POST', `/projects/${id}/export`, { format, idempotencyKey: newKey() }, `${project?.name ?? 'export'}-${format}.zip`); refresh(); }
+    catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
+  };
+  const downloadOne = async (format: 'png' | 'html') => {
+    if (!version) return;
+    setBusy(format); setErr(null);
+    const base = `${project?.name ?? 'design'}-${page?.name ?? 'screen'}`.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    try { await api.downloadAndShare('GET', `/versions/${version.id}/download?format=${format}`, null, `${base}.${format}`, format === 'png' ? 'image/png' : 'text/html'); }
     catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
   };
   const reaudit = async () => {
@@ -112,7 +124,13 @@ export default function ProjectScreen() {
       <Stack.Screen options={{ title: project.name }} />
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
         {project.pages.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>{project.pages.map((p) => <Chip key={p.id} label={p.name + (p.currentVersionId ? '' : ' (empty)')} active={p.id === pageId} onPress={() => setPageId(p.id)} />)}</ScrollView>}
-        <DeviceSwitch device={device} onChange={setDevice} />
+        <Row>
+          <View style={{ flex: 1 }}><DeviceSwitch device={device} onChange={setDevice} /></View>
+          <PressScale onPress={() => router.push(`/preview/${id}${pageId ? `?page=${pageId}` : ''}`)} disabled={!version} accessibilityLabel="Open full-screen preview"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: version ? c.primary : c.card }}>
+            <Maximize2 size={16} color={version ? '#fff' : c.muted} /><T size={13} weight="600" style={{ color: version ? '#fff' : c.muted }}>Full screen</T>
+          </PressScale>
+        </Row>
         {version ? <Animated.View key={version.id} entering={FadeInDown.springify().damping(18)}><HtmlPreview html={version.html} device={device} /></Animated.View> : (
           <Card style={{ height: 260, alignItems: 'center', justifyContent: 'center', gap: 6 }}><Float><Sparkles color={c.primary} size={28} /></Float><T weight="600">{running ? 'Generating…' : 'This page is empty'}</T><T muted size={13}>{running ? 'Usually 30–120 seconds' : 'Describe it below to generate'}</T></Card>
         )}
@@ -177,6 +195,13 @@ export default function ProjectScreen() {
 
         {tab === 'export' && (<Swap id="export">
           <Card style={{ gap: 12 }}>
+            <T weight="600">This page{page ? ` · ${page.name}` : ''}</T>
+            <Row>
+              <Button style={{ flex: 1 }} small variant="secondary" title="Screenshot PNG" icon={<ImageIcon size={16} color={c.text} />} loading={busy === 'png'} disabled={!version?.imageUrl} onPress={() => downloadOne('png')} />
+              <Button style={{ flex: 1 }} small variant="secondary" title=".html file" icon={<FileCode2 size={16} color={c.text} />} loading={busy === 'html'} disabled={!version} onPress={() => downloadOne('html')} />
+            </Row>
+            <T muted size={11}>Free. Single-page downloads open in Android's share sheet.</T>
+            <T weight="600">Whole project{project.pages.filter((x) => x.currentVersionId).length > 1 ? ` · ${project.pages.filter((x) => x.currentVersionId).length} screens` : ''}</T>
             <T muted size={13}>Exports are validated first; you're only charged if the build check passes. The ZIP opens in Android's share sheet (save to Files, Drive, email…).</T>
             <Button title="HTML / CSS / JS · 1 cr" icon={<Download color="#fff" size={18} />} loading={busy === 'html'} disabled={!version} onPress={() => doExport('html')} />
             <Button variant="secondary" title={`React + TypeScript · 2 cr${me?.plan.features.includes('react_export') ? '' : ' 🔒'}`} loading={busy === 'react'} disabled={!version || !me?.plan.features.includes('react_export')} onPress={() => doExport('react')} />

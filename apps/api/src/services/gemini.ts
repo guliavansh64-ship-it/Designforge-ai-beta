@@ -8,8 +8,8 @@ import { getCredential, markConnection } from './connections.js';
  * Gemini API image model with the user's OWN key. No operator key exists.
  */
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
-export const DEFAULT_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL_DEFAULT || 'gemini-2.5-flash-image';
-export const DEFAULT_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL_DEFAULT || 'gemini-2.5-flash';
+export const DEFAULT_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL_DEFAULT || 'gemini-nano-banana-2.1';
+export const DEFAULT_TEXT_MODEL = process.env.GEMINI_TEXT_MODEL_DEFAULT || 'gemini-flash-latest';
 
 async function call(apiKey: string, pathName: string, body?: unknown, timeoutMs = 120_000) {
   const r = await fetch(`${BASE}${pathName}`, {
@@ -69,5 +69,23 @@ export const gemini = {
     }, 60_000);
     if (status !== 200) throw mapError(status, json);
     return (json?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? '').join('');
+  },
+
+  /** Structured output (JSON mode with a response schema) using the user's own key. */
+  async generateJson(uid: string, prompt: string, responseSchema: unknown, timeoutMs = 45_000, model = DEFAULT_TEXT_MODEL): Promise<any> {
+    const key = await getCredential(uid, 'gemini');
+    const { status, json } = await call(key, `/models/${encodeURIComponent(model)}:generateContent`, {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json', responseSchema, temperature: 0.8 },
+    }, timeoutMs);
+    if (status !== 200) {
+      const err = mapError(status, json);
+      if (status === 401 || status === 403 || (status === 400 && /API key not valid/i.test(json?.error?.message ?? ''))) await markConnection(uid, 'gemini', 'invalid', err.message);
+      if (status === 429) await markConnection(uid, 'gemini', 'quota_exceeded', err.message);
+      throw err;
+    }
+    const text = (json?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p.text ?? '').join('').trim();
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+    try { return JSON.parse(cleaned); } catch { throw new AppError(502, ERROR_CODES.GEMINI_ERROR, 'Gemini returned malformed JSON.'); }
   },
 };

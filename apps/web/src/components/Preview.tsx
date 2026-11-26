@@ -82,7 +82,7 @@ export function buildSrcDoc(html: string, editable: boolean) {
 }
 
 interface Props {
-  html: string; device: Device; zoom: number | 'fit'; editable?: boolean; className?: string; title?: string;
+  html: string; device: Device; zoom: number | 'fit' | 'contain'; editable?: boolean; className?: string; title?: string;
   onSelect?: (s: Selection) => void; onTheme?: (t: { colors: string[]; fonts: string[]; sections: { path: string; label: string; tag: string }[]; images: { path: string; src: string; alt: string }[] }) => void;
   onError?: (msg: string) => void; onChange?: () => void;
 }
@@ -102,10 +102,12 @@ export const Preview = forwardRef<PreviewHandle, Props>(function Preview({ html,
 
   useLayoutEffect(() => {
     const el = box.current; if (!el) return;
-    const ro = new ResizeObserver(() => setScale(zoom === 'fit' ? Math.min(1, (el.clientWidth - 32) / width) : zoom));
+    const h = device === 'MOBILE' ? 844 : device === 'TABLET' ? 1112 : 800;
+    // 'fit' = fit width (scroll vertically); 'contain' = whole device visible (full-screen preview).
+    const ro = new ResizeObserver(() => setScale(zoom === 'fit' ? Math.min(1, (el.clientWidth - 32) / width) : zoom === 'contain' ? Math.min(1, (el.clientWidth - 32) / width, (el.clientHeight - 32) / h) : zoom));
     ro.observe(el);
     return () => ro.disconnect();
-  }, [zoom, width]);
+  }, [zoom, width, device]);
 
   useEffect(() => {
     const h = (e: MessageEvent) => {

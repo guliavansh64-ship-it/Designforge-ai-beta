@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft, Smartphone, Tablet, Monitor, Undo2, Redo2, ZoomIn, Download, Share2, Sparkles, Wand2, Shuffle, Plus, MessageSquare,
-  SlidersHorizontal, Palette, History, ClipboardCheck, Check, Loader2, CloudOff, Eye, Pencil, X, MoreHorizontal, Trash2, Lock,
+  SlidersHorizontal, Palette, History, ClipboardCheck, Check, Loader2, CloudOff, Eye, Pencil, X, MoreHorizontal, Trash2, Lock, Maximize2,
 } from 'lucide-react';
 import { api, newKey, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -86,14 +86,16 @@ export default function Studio() {
   useEffect(() => { loadVersion(page?.currentVersionId); }, [page?.currentVersionId, loadVersion]);
 
   // ── jobs
-  const job = useJob(jobId, async (j: GenerationJob) => {
+  const job = useJob(jobId, async (j: GenerationJob, sawRunning: boolean) => {
     await Promise.all([loadProject(), refreshMe()]);
     setVersionsKey((k) => k + 1);
     if (j.status === 'succeeded') {
       if (j.type === 'variants' && j.resultVersionIds?.length) {
         const vs = await Promise.all(j.resultVersionIds.map((id) => api.get<{ version: ProjectVersion }>(`/versions/${id}`).then((r) => r.version)));
         setVariants(vs);
-      } else toast('success', j.type === 'improve' ? 'Improvement finished — see before/after in Versions.' : 'Design updated.');
+      } else toast('success', j.type === 'improve' ? 'Improvement finished — see before/after in Versions.' : (j.resultVersionIds?.length ?? 0) > 1 ? `Your app is ready — ${j.resultVersionIds!.length} screens.` : 'Design updated.');
+      // A fresh generation opens straight into the full-screen device preview.
+      if (j.type === 'generate' && sawRunning && params.get('job')) { params.delete('job'); setParams(params, { replace: true }); nav(`/preview/${projectId}`); return; }
       const p = await loadProject();
       if (j.type === 'generate' && p) { const last = p.pages[p.pages.length - 1]; if (last && last.id !== pageId && !params.get('job')) setPageId(last.id); }
     } else if (j.status === 'failed') toast('error', j.error?.message ?? 'Generation failed. Credits refunded.');
@@ -297,6 +299,7 @@ export default function Studio() {
         </div>
         <button onClick={() => setEditMode((m) => !m)} className={cx('hidden rounded-lg p-2 sm:block', editMode ? 'text-forge-500' : 'muted')} aria-label={editMode ? 'Switch to interact mode' : 'Switch to edit mode'} title={editMode ? 'Edit mode: click selects elements' : 'Preview mode'}>{editMode ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
         {isOwner && <Button size="sm" variant="ghost" className="hidden sm:inline-flex" icon={<Share2 className="h-4 w-4" />} onClick={() => setShareOpen(true)}>Share</Button>}
+        <Button size="sm" variant="secondary" icon={<Maximize2 className="h-4 w-4" />} onClick={() => nav(`/preview/${project.id}${pageId ? `?page=${pageId}` : ''}`)} disabled={!page?.currentVersionId} title="Full-screen preview (Mobile / Tablet / Desktop)"><span className="hidden sm:inline">Full screen</span></Button>
         <Button size="sm" icon={<Download className="h-4 w-4" />} onClick={() => nav(`/exports?project=${project.id}`)}><span className="hidden sm:inline">Export</span></Button>
         <button className="rounded-lg p-2 muted xl:hidden" onClick={() => setMobilePanel(mobilePanel === 'right' ? 'none' : 'right')} aria-label="Tools"><MoreHorizontal className="h-4 w-4" /></button>
       </div>

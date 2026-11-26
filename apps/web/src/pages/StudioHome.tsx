@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Sparkles, Smartphone, Tablet, Monitor, Globe, Wand2, Coins, Lock, Plus, X } from 'lucide-react';
-import { CREDIT_COSTS, WEBSITE_CATEGORIES, TEMPLATE_CATEGORIES, STITCH_MODELS, normalizeStitchModel, type StitchModel } from '@designforge/shared';
+import { Sparkles, Smartphone, Tablet, Monitor, Globe, Wand2, Coins, Lock, Plus, X, Bot, Square, LayoutGrid } from 'lucide-react';
+import { CREDIT_COSTS, WEBSITE_CATEGORIES, TEMPLATE_CATEGORIES, STITCH_MODELS, normalizeStitchModel, type StitchModel, type DesignPlanSummary, type GenerationMode } from '@designforge/shared';
+import { Link } from 'react-router-dom';
+import { PlanSummary } from '../components/PlanSummary';
 import { api, newKey, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
@@ -11,6 +13,8 @@ import { Button, Card, ErrorBox, PageHeader, Tabs, cx } from '../components/ui';
 
 type Mode = 'any' | 'ui' | 'website';
 const UI_IDEAS = [
+  'Create a fitness app',
+  'Food delivery app for a cloud kitchen in Delhi',
   'A fintech mobile app home screen with balance card, quick actions (send, request, pay bills) and recent transactions list',
   'A habit tracker onboarding flow screen: friendly illustration area, 3 benefit bullets, primary "Get started" button',
   'A SaaS analytics dashboard with sidebar navigation, KPI cards, revenue line chart and a recent orders table',
@@ -41,30 +45,45 @@ export default function StudioHome({ mode }: { mode: Mode }) {
 
   const isSite = kind === 'website';
   const siteAllowed = me?.plan.features.includes('website_studio');
-  const cost = CREDIT_COSTS.generate_flash;
+  const per = CREDIT_COSTS.generate_flash;
+  // Prompt enhancement + full-app generation
+  const [genMode, setGenMode] = useState<GenerationMode>('auto');
+  const [screens, setScreens] = useState(4);
+  const [enhanceOn, setEnhanceOn] = useState(true);
+  const [planState, setPlanState] = useState<{ plan: DesignPlanSummary; key: string } | null>(null);
+  const [enhancing, setEnhancing] = useState(false);
+  const geminiOn = !!me?.connections.find((c) => c.provider === 'gemini')?.connected;
+  const sitePages = isSite && genMode !== 'single' ? pages.slice(0, 6) : undefined;
+  const count = sitePages?.length ?? screens;
+  const planKey = JSON.stringify([prompt, kind, genMode, count, style, category, device, sitePages]);
+  const activePlan = enhanceOn && planState?.key === planKey ? planState.plan : null;
+  const costText = activePlan ? `${activePlan.screens.length * per} credits · ${activePlan.screens.length} ${activePlan.screens.length > 1 ? 'screens' : 'screen'} × ${per}`
+    : genMode === 'app' ? `${count * per} credits · ${count} screens × ${per}`
+    : genMode === 'auto' && enhanceOn ? `${per} credits per screen · up to ${count} for a full app` : `${per} credits`;
 
-  const enhance = () => {
-    // Deterministic, local prompt structuring (no AI call, no credits).
-    const lines = [prompt.trim()];
-    if (!/audience|for (users|people|customers)/i.test(prompt)) lines.push('Target audience: describe who uses this and their main goal.');
-    if (isSite) lines.push(`Sections: sticky header with navigation, hero with primary CTA, ${category ? category.toLowerCase() + '-specific ' : ''}content sections, social proof, footer with contact.`);
-    else lines.push('Include: clear primary action, logical visual hierarchy, realistic content (no lorem ipsum).');
-    if (style) lines.push(`Visual style: ${style}.`);
-    setPrompt(lines.join('\n'));
+  const enhance = async () => {
+    setEnhancing(true); setError(null);
+    try {
+      const r = await api.post<{ plan: DesignPlanSummary }>('/prompt/enhance', { prompt, kind, deviceType: device, style: style || undefined, category: category || undefined, mode: genMode, maxScreens: Math.max(2, count), pageNames: sitePages });
+      setPlanState({ plan: r.plan, key: planKey });
+    } catch (e) { setError(e as ApiError); } finally { setEnhancing(false); }
   };
 
   const start = async () => {
     setBusy(true); setError(null);
     let created: Project | null = null;
     try {
-      const { project } = await api.post<{ project: Project }>('/projects', { name: name.trim() || (prompt.trim().split(/[.,\n]/)[0].slice(0, 60) || 'Untitled design'), kind, deviceType: device });
+      const fallbackName = activePlan?.isFullApp ? activePlan.appName : genMode !== 'single' && enhanceOn ? 'Untitled' : (prompt.trim().split(/[.,\n]/)[0].slice(0, 60) || 'Untitled design');
+      const { project } = await api.post<{ project: Project }>('/projects', { name: name.trim() || fallbackName, kind, deviceType: device });
       created = project;
       const firstPage = project.pages[0];
-      if (isSite && pages[0] && pages[0] !== firstPage.name) await api.patch(`/projects/${project.id}/pages/${firstPage.id}`, { name: pages[0] });
+      const singleSite = isSite && (genMode === 'single' || !enhanceOn);
+      if (singleSite && pages[0] && pages[0] !== firstPage.name) await api.patch(`/projects/${project.id}/pages/${firstPage.id}`, { name: pages[0] });
       const { job } = await api.post<{ job: { id: string } }>(`/projects/${project.id}/generate`, {
         prompt, deviceType: device, model, pageId: firstPage.id, category: category || undefined, style: style || undefined, idempotencyKey: newKey(),
+        enhance: enhanceOn, mode: enhanceOn ? genMode : genMode === 'app' ? 'app' : 'single', maxScreens: Math.max(2, count), pageNames: sitePages, plan: activePlan ?? undefined,
       });
-      if (isSite && pages.length > 1) sessionStorage.setItem(`df_pending_pages_${project.id}`, JSON.stringify(pages.slice(1)));
+      if (singleSite && pages.length > 1) sessionStorage.setItem(`df_pending_pages_${project.id}`, JSON.stringify(pages.slice(1)));
       nav(`/studio/${project.id}?job=${job.id}`);
     } catch (e) {
       // Generation never started: remove the empty project so it doesn't count toward the plan limit.
@@ -88,17 +107,37 @@ export default function StudioHome({ mode }: { mode: Mode }) {
           <input id="pname" className="field" placeholder={isSite ? 'e.g. Ember & Oak Café' : 'e.g. Pulse fintech app'} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
 
           <div className="mt-5 flex items-center justify-between">
-            <label className="label !mb-0" htmlFor="prompt">{isSite ? 'Business brief' : 'Describe the screen'}</label>
-            <button onClick={enhance} disabled={prompt.trim().length < 5} className="inline-flex items-center gap-1 text-xs font-medium text-forge-500 hover:underline disabled:opacity-40"><Wand2 className="h-3.5 w-3.5" />Structure my prompt</button>
+            <label className="label !mb-0" htmlFor="prompt">{isSite ? 'Business brief' : 'Describe your app or screen'}</label>
+            {enhanceOn && <button onClick={enhance} disabled={prompt.trim().length < 3 || enhancing} className="inline-flex items-center gap-1 text-xs font-medium text-forge-500 hover:underline disabled:opacity-40"><Wand2 className={cx('h-3.5 w-3.5', enhancing && 'animate-spin')} />{enhancing ? 'Enhancing…' : activePlan ? 'Re-enhance' : `Enhance prompt${geminiOn ? ' with Gemini' : ''} · preview plan (free)`}</button>}
           </div>
           <textarea id="prompt" className="field mt-1.5 min-h-[160px] resize-y leading-relaxed" maxLength={4000} value={prompt} onChange={(e) => setPrompt(e.target.value)}
-            placeholder={isSite ? 'What does the business do, who are the customers, what should visitors do?' : 'What is the screen for, what content does it show, what is the main action?'} />
+            placeholder={isSite ? 'e.g. Website for my bakery in Gurugram — or describe the business, customers and what visitors should do' : 'e.g. Create a fitness app — or describe one screen in detail'} />
           <div className="mt-1 flex justify-between text-[11px] muted"><span>Be specific about content, audience and primary action.</span><span>{prompt.length}/4000</span></div>
 
           <div className="mt-3 flex flex-wrap gap-2">
             {(isSite ? SITE_IDEAS : UI_IDEAS).map((i) => (
               <button key={i} onClick={() => setPrompt(i)} className="surface-2 max-w-full truncate rounded-full px-3 py-1 text-xs muted hover:text-ink-900 dark:hover:text-white" title={i}>{i.slice(0, 48)}…</button>
             ))}
+          </div>
+
+          {activePlan && <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mt-4"><PlanSummary plan={activePlan} /></motion.div>}
+
+          <div className="mt-6">
+            <span className="label">What to build</span>
+            <div className="grid grid-cols-3 gap-2">
+              {([['auto', 'Auto', Bot], ['single', 'One screen', Square], ['app', isSite ? 'Full website' : 'Full app', LayoutGrid]] as const).map(([m, l, I]) => (
+                <button key={m} onClick={() => setGenMode(m)} aria-pressed={genMode === m} className={cx('flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-sm font-medium transition', genMode === m ? 'border-forge-500 bg-forge-500/10 text-forge-600 dark:text-forge-200' : 'border-ink-200 muted dark:border-ink-700')}><I className="h-4 w-4" />{l}</button>
+              ))}
+            </div>
+            <p className="muted mt-2 text-xs">{genMode === 'auto' ? 'Short ideas like “create a fitness app” become a complete multi-screen app with one theme; a detailed single-screen request stays one screen.' : genMode === 'app' ? `A complete ${isSite ? 'website' : 'app'}: ${count} ${isSite ? 'pages' : 'screens'} with a shared theme, navigation and realistic content.` : 'Exactly one screen.'}</p>
+            {genMode !== 'single' && !isSite && (
+              <div className="mt-2 flex gap-1.5">{[3, 4, 5, 6].map((n) => <button key={n} onClick={() => setScreens(n)} className={cx('rounded-full border px-3 py-1 text-xs', screens === n ? 'border-forge-500 bg-forge-500/15 text-forge-600 dark:text-forge-200' : 'border-ink-200 muted dark:border-ink-700')}>{n} screens</button>)}</div>
+            )}
+            <label className="mt-4 flex cursor-pointer items-start gap-3">
+              <input type="checkbox" className="mt-1 h-4 w-4 accent-forge-500" checked={enhanceOn} onChange={(e) => setEnhanceOn(e.target.checked)} />
+              <span className="text-sm"><span className="font-medium">Enhance prompt{geminiOn ? ' with Gemini' : ''}</span>
+                <span className="muted block text-xs">{geminiOn ? 'Your own Gemini key rewrites your idea into a detailed design brief before it is sent to Stitch.' : <>Built-in enhancer is used. <Link to="/integrations" className="text-forge-500 hover:underline">Connect your Gemini key</Link> for AI-written briefs.</>}</span></span>
+            </label>
           </div>
 
           {isSite && (
@@ -116,15 +155,15 @@ export default function StudioHome({ mode }: { mode: Mode }) {
                   <button className="ml-1 rounded-full p-1 text-forge-500" aria-label="Add page"><Plus className="h-4 w-4" /></button>
                 </form>
               </div>
-              <p className="muted mt-2 text-[11px]">The first page is generated now. The others appear in the editor as one-click "generate in the same style" steps (each uses its own credits and Stitch quota).</p>
+              <p className="muted mt-2 text-[11px]">{genMode !== 'single' && enhanceOn ? `All ${Math.min(pages.length, 6)} pages are generated now with one shared theme (max 6; ${per} credits each).` : 'The first page is generated now. The others appear in the editor as one-click "generate in the same style" steps (each uses its own credits and Stitch quota).'}</p>
             </div>
           )}
 
           <ErrorBox error={error} className="mt-5" />
 
           <div className="mt-6 flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="flex items-center gap-1.5 text-xs muted"><Coins className="h-3.5 w-3.5 text-amber-500" />{cost} credits · refunded automatically if generation fails</p>
-            <Button size="lg" variant="ember" loading={busy} disabled={prompt.trim().length < 5 || (isSite && !siteAllowed)} onClick={start} icon={<Sparkles className="h-4 w-4" />}>Generate design</Button>
+            <p className="flex items-center gap-1.5 text-xs muted"><Coins className="h-3.5 w-3.5 text-amber-500" />{costText} · refunded automatically if generation fails</p>
+            <Button size="lg" variant="ember" loading={busy} disabled={prompt.trim().length < 5 || (isSite && !siteAllowed)} onClick={start} icon={<Sparkles className="h-4 w-4" />}>{genMode === 'app' || activePlan?.isFullApp ? (isSite ? 'Generate full website' : 'Generate full app') : 'Generate design'}</Button>
           </div>
         </Card>
 

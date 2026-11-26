@@ -12,6 +12,7 @@ import * as credits from './credits.js';
 import { notify, track } from './notify.js';
 import { runLogoJob, type LogoJobInput } from './logos.js';
 import { safeQuery } from '../lib/safeQuery.js';
+import { enhance, stitchPromptFor, type DesignPlan, type OutputMode } from './promptEnhancer.js';
 
 /**
  * In-process job queue (free-tier friendly; single API instance).
@@ -23,7 +24,7 @@ import { safeQuery } from '../lib/safeQuery.js';
  * Scale-out path: replace `enqueue` with Cloud Tasks / BullMQ — runners are pure functions.
  */
 
-export interface GeneratePayload { prompt: string; deviceType: DeviceType; model: StitchModel; pageId?: string; newPageName?: string; category?: string; style?: string }
+export interface GeneratePayload { prompt: string; deviceType: DeviceType; model: StitchModel; pageId?: string; newPageName?: string; category?: string; style?: string; enhance?: boolean; mode?: OutputMode; maxScreens?: number; plan?: DesignPlan; pageNames?: string[] }
 export interface EditPayload { prompt: string; pageId: string; deviceType: DeviceType; model: StitchModel; section?: string }
 export interface VariantsPayload { prompt: string; pageId: string; count: number; creativeRange: 'REFINE' | 'EXPLORE' | 'REIMAGINE'; deviceType: DeviceType; model: StitchModel }
 export interface ImprovePayload { pageId: string; instructions?: string; autoIterate: boolean; maxIterations: number; targetScore: number; deviceType: DeviceType; model: StitchModel; importAssetBase64?: string; importExt?: '.html' | '.png' | '.jpg' | '.jpeg' | '.webp' }
@@ -197,25 +198,138 @@ async function saveScreen(ctx: JobCtx, project: Project, pageId: string, r: { ht
 
 async function runGenerate(ctx: JobCtx) {
   const p = ctx.job.payload as GeneratePayload;
-  const project = await loadProject(ctx.job.projectId, ctx.job.ownerId, 'editor');
-  await ctx.stage('Analyzing prompt', 4);
-  let pageId = p.pageId;
-  if (!pageId) {
-    pageId = newId('pg_');
-    const pages = [...project.pages, { id: pageId, name: (p.newPageName || `Page ${project.pages.length + 1}`).slice(0, 60) }];
-    await db().collection(C.projects).doc(project.id).update({ pages });
-    project.pages = pages;
+  const uid = ctx.job.ownerId;
+  const project = await loadProject(ctx.job.projectId, uid, 'editor');
+  // A project that already has designs gets ONE more screen; a fresh project may become a full app.
+  const hasDesigns = project.pages.some((x) => !!x.currentVersionId);
+  const addingToExisting = hasDesigns || !!p.newPageName;
+  const mode: OutputMode = addingToExisting ? 'single' : (p.mode ?? 'single');
+
+  // Legacy path (old clients / enhancement switched off): rule-based enrichment, one screen.
+  if (!p.enhance && !p.plan && mode === 'single') {
+    await ctx.stage('Analyzing prompt', 4);
+    const pageId = await ensurePage(project, p.pageId, p.newPageName);
+    const pageName = project.pages.find((x) => x.id === pageId)?.name;
+    const prompt = enrichPrompt(p.prompt, project.kind, { category: p.category, pages: pageName ? [pageName] : [], style: p.style });
+    const sid = await ensureStitchProject(project, uid, ctx);
+    await ctx.checkCancelled();
+    await ctx.stage('Generating with Google Stitch (30–120s)', 20);
+    const r = await ctx.timed(stitchEngine.generate(uid, sid, prompt, p.deviceType, p.model), 'Stitch generation');
+    await ctx.checkCancelled();
+    await ctx.stage('Auditing & saving version', 85);
+    const v = await saveScreen(ctx, project, pageId, r, 'stitch_generate', p.prompt);
+    return [v.id];
   }
-  const pageName = project.pages.find((x) => x.id === pageId)?.name;
-  const prompt = enrichPrompt(p.prompt, project.kind, { category: p.category, pages: pageName ? [pageName] : [], style: p.style });
-  const sid = await ensureStitchProject(project, ctx.job.ownerId, ctx);
-  await ctx.checkCancelled();
-  await ctx.stage('Generating with Google Stitch (30–120s)', 20);
-  const r = await ctx.timed(stitchEngine.generate(ctx.job.ownerId, sid, prompt, p.deviceType, p.model), 'Stitch generation');
-  await ctx.checkCancelled();
-  await ctx.stage('Auditing & saving version', 85);
-  const v = await saveScreen(ctx, project, pageId, r, 'stitch_generate', p.prompt);
-  return [v.id];
+
+  // 1. Enhance the prompt (user's own Gemini key, else built-in planner) and plan the screens.
+  await ctx.stage('Enhancing your prompt', 3);
+  const existingName = addingToExisting ? (p.pageId ? project.pages.find((x) => x.id === p.pageId)?.name : p.newPageName) : undefined;
+  const plan: DesignPlan = p.plan && !addingToExisting
+    ? { ...p.plan, isFullApp: p.plan.screens.length > 1, screens: p.plan.screens.slice(0, 6) }
+    : await ctx.timed(enhance(uid, {
+    prompt: p.prompt, kind: project.kind, device: p.deviceType, style: p.style, category: p.category,
+    mode, maxScreens: p.maxScreens ?? 5, pageName: existingName, pageNames: p.pageNames,
+  }), 'Prompt enhancement');
+  const total = plan.screens.length;
+  await jobRef(ctx.job.id).update({ plan, screensTotal: total, screensDone: 0, updatedAt: Date.now() });
+  await ctx.stage(plan.enhancer === 'gemini' ? `Prompt enhanced with Gemini · ${total} ${total > 1 ? 'screens' : 'screen'} planned` : `Prompt enhanced · ${total} ${total > 1 ? 'screens' : 'screen'} planned`, 6);
+
+  // Rename an untitled project after the planned app.
+  if (plan.isFullApp && /^(untitled|test|new project|my project)/i.test(project.name)) {
+    await db().collection(C.projects).doc(project.id).update({ name: plan.appName, nameLower: plan.appName.toLowerCase() }).catch(() => undefined);
+  }
+
+  const sid = await ensureStitchProject(project, uid, ctx);
+  const ids: string[] = [];
+  let firstVersion: { id: string; imageUrl?: string } | undefined;
+  const warnings: string[] = [];
+  for (let i = 0; i < total; i++) {
+    await ctx.checkCancelled();
+    const screen = plan.screens[i];
+    const span = 88 / total;
+    const base = 8 + i * span;
+    // Screen 1 was paid at enqueue; each further screen reserves its own credits (idempotent per screen).
+    let txn: string | undefined;
+    if (i > 0) {
+      try { txn = (await credits.reserve(uid, 'generate_flash', `${ctx.job.id}_s${i}`, 1, { projectId: project.id, type: 'generate', screen: screen.name })).txnId; }
+      catch { warnings.push(`Stopped after ${i} screens: not enough credits for "${screen.name}".`); break; }
+    }
+    try {
+      const pageId = i === 0
+        ? await firstPage(project, p, plan.isFullApp && !addingToExisting ? screen.name : undefined, !addingToExisting)
+        : await ensurePage(project, undefined, screen.name);
+      await ctx.stage(total > 1 ? `Screen ${i + 1}/${total} · ${screen.name} · generating with Stitch` : `Generating ${screen.name} with Google Stitch (30–120s)`, Math.round(base + 2));
+      const r = await ctx.timed(stitchEngine.generate(uid, sid, stitchPromptFor(plan, i, project.kind), p.deviceType, p.model), `Stitch generation (${screen.name})`);
+      await ctx.checkCancelled();
+      await ctx.stage(total > 1 ? `Screen ${i + 1}/${total} · ${screen.name} · saving` : 'Auditing & saving version', Math.round(base + span * 0.85));
+      const v = await saveScreen(ctx, project, pageId, r, 'stitch_generate', i === 0 ? p.prompt : `${plan.appName} · ${screen.name}`);
+      ids.push(v.id);
+      if (!firstVersion) firstVersion = v;
+      if (txn) await credits.commit(txn);
+      await jobRef(ctx.job.id).update({ screensDone: ids.length, resultVersionIds: ids, updatedAt: Date.now() });
+    } catch (e) {
+      if (txn) await credits.refund(txn, `Screen failed: ${screen.name}`).catch(() => undefined);
+      if (e instanceof JobCancelled) { if (ids.length) break; throw e; }
+      // First screen failing fails the whole job (and refunds it). Later failures keep finished screens.
+      if (i === 0 || !ids.length) throw e;
+      const msg = e instanceof AppError ? e.message : 'unexpected error';
+      warnings.push(`"${screen.name}" could not be generated (${msg.slice(0, 160)}). Its credits were refunded.`);
+      if (e instanceof AppError && [401, 403, 412, 429].includes(e.status)) break;
+    }
+  }
+  if (warnings.length) await jobRef(ctx.job.id).update({ warnings });
+  // The project card should show the app's first (home) screen, not whichever finished last.
+  if (ids.length > 1 && firstVersion) {
+    await db().collection(C.projects).doc(project.id).update({ currentVersionId: firstVersion.id, ...(firstVersion.imageUrl ? { thumbnailUrl: firstVersion.imageUrl } : {}) }).catch(() => undefined);
+  }
+  return ids;
+}
+
+/**
+ * Read-modify-write of the project's pages inside a transaction. The in-memory `project.pages` goes
+ * stale as soon as createVersion() moves a page head, so never write it back blindly.
+ */
+async function mutatePages(project: Project, fn: (pages: Project['pages']) => Project['pages']) {
+  const ref = db().collection(C.projects).doc(project.id);
+  const pages = await db().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const next = fn(((snap.get('pages') as Project['pages']) ?? []).map((x) => ({ ...x })));
+    tx.update(ref, { pages: next, updatedAt: Date.now() });
+    return next;
+  });
+  project.pages = pages;
+  return pages;
+}
+
+/** Page for the first screen: the requested page (renamed for a full app when still empty) or a new/reused one. */
+async function firstPage(project: Project, p: GeneratePayload, renameTo: string | undefined, fresh: boolean) {
+  if (p.pageId) {
+    const pg = project.pages.find((x) => x.id === p.pageId);
+    if (pg && renameTo && !pg.currentVersionId && pg.name !== renameTo) {
+      await mutatePages(project, (pages) => pages.map((x) => (x.id === pg.id && !x.currentVersionId ? { ...x, name: renameTo.slice(0, 60) } : x)));
+    }
+    return p.pageId;
+  }
+  return ensurePage(project, undefined, p.newPageName || renameTo, fresh);
+}
+
+/**
+ * Returns the page to write into. With `reuseEmptyFirst`, the project's first page is reused when
+ * it has no design yet (new projects are created with an empty "Screen 1"/"Home" page), renamed to `name`.
+ */
+async function ensurePage(project: Project, pageId?: string, name?: string, reuseEmptyFirst = false) {
+  if (pageId) return pageId;
+  let chosen = '';
+  await mutatePages(project, (pages) => {
+    const first = pages[0];
+    if (reuseEmptyFirst && pages.length === 1 && first && !first.currentVersionId) {
+      chosen = first.id;
+      return [{ ...first, name: (name || first.name).slice(0, 60) }];
+    }
+    chosen = newId('pg_');
+    return [...pages, { id: chosen, name: (name || `Page ${pages.length + 1}`).slice(0, 60) }];
+  });
+  return chosen;
 }
 
 async function runEdit(ctx: JobCtx) {

@@ -26,20 +26,21 @@ export function useApi<T>(path: string | null, deps: unknown[] = []) {
 }
 
 /** Polls GET /api/jobs/:id with backoff until terminal. Push notification also arrives when backgrounded. */
-export function useJob(jobId: string | null, onDone?: (j: Job) => void) {
+export function useJob(jobId: string | null, onDone?: (j: Job, sawRunning: boolean) => void) {
   const [job, setJob] = useState<Job | null>(null);
   const cb = useRef(onDone); cb.current = onDone;
   useEffect(() => {
     if (!jobId) { setJob(null); return; }
-    let stop = false; let delay = 1500; let t: ReturnType<typeof setTimeout>;
+    let stop = false; let delay = 1500; let t: ReturnType<typeof setTimeout>; let live = false;
     const tick = async () => {
       try {
         const { job: j } = await api.get<{ job: Job }>(`/jobs/${jobId}`);
         if (stop) return;
         // PERF: only re-render when something visible changed (polling every few seconds otherwise
         // re-rendered the whole project screen, incl. the WebView preview).
-        setJob((prev) => (prev && prev.id === j.id && prev.status === j.status && prev.progress === j.progress && prev.stage === j.stage && prev.error?.message === j.error?.message ? prev : j));
-        if (['succeeded', 'failed', 'cancelled'].includes(j.status)) { cb.current?.(j); return; }
+        setJob((prev) => (prev && prev.id === j.id && prev.status === j.status && prev.progress === j.progress && prev.stage === j.stage && prev.error?.message === j.error?.message && prev.screensDone === j.screensDone && !!prev.plan === !!j.plan && prev.warnings?.length === j.warnings?.length ? prev : j));
+        if (['succeeded', 'failed', 'cancelled'].includes(j.status)) { cb.current?.(j, live); return; }
+        live = true;
       } catch { /* keep polling */ }
       delay = Math.min(delay * 1.3, 6000); t = setTimeout(tick, delay);
     };

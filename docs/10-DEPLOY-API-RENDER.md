@@ -84,7 +84,7 @@ Render only runs the code you last pushed. If the app shows
 2. In Render, open **designforge-api → Manual Deploy → Clear build cache & deploy**.
 3. Open `https://<your-service>.onrender.com/health`. It must show:
    ```json
-   { "ok": true, "build": "2026-11-26b", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
+   { "ok": true, "build": "2026-11-27", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
    ```
    If `build` is missing, the old code is still running.
 4. Optional: run a real end-to-end Stitch check from your PC. This uses 1 generation of *your* Stitch quota and deletes its test project afterwards:
@@ -95,3 +95,25 @@ Render only runs the code you last pushed. If the app shows
 **What changed in Nov 2026 (Stitch API):**
 - Stitch retired the `GEMINI_3_FLASH` / `GEMINI_3_PRO` / `GEMINI_3_1_PRO` models and now accepts `GEMINI_3_8_FLASH` and `GEMINI_3_5_FLASH_LITE`.
 - Generated HTML and screenshot download URLs now need credentials. The API downloads files through Stitch's official `download_file` tool instead.
+
+## Build 2026-11-27: prompt enhancement, full-app generation, full-screen preview, downloads
+
+**What's new**
+- **Prompt enhancement before Stitch.** Every generation request goes through `services/promptEnhancer.ts` first:
+  - If the user has connected **their own Gemini key** (Integrations), Gemini (`gemini-flash-latest`, JSON mode) rewrites the idea into a detailed design brief, a shared theme and one detailed prompt per screen.
+  - Without a key, or if Gemini fails, a built-in planner does the same from category templates (fitness, food, shop, finance, travel, education, generic, website pages).
+  - There is no shared or operator Gemini key.
+- **Full app from a short prompt.** "Create a fitness app" → 3–6 screens (Home, Workouts, Active workout, Progress, Profile…). Every screen is generated in the same Stitch project with the same theme, navigation and brief, then saved as its own page.
+  - Credits are charged **per screen** (2 each): screen 1 at enqueue, each further screen when it starts.
+  - If a later screen fails, finished screens are kept and only that screen is refunded.
+  - In `mode: 'app'` the API checks up front that the whole app is affordable.
+- **`POST /api/prompt/enhance`**: previews the plan for free. The client may send that plan back in `/generate` (`plan`), so Stitch gets exactly what the user saw.
+- **`/generate` body additions** (all optional; old app builds keep the old one-screen behaviour): `enhance`, `mode: auto|single|app`, `maxScreens` (2–6), `plan`, `pageNames`.
+- **Downloads:**
+  - `GET /api/versions/:vid/download?format=png|html` is free: the Stitch screenshot, or the page as one `.html` file.
+  - Whole-app ZIP exports (HTML 1 cr, React 2 cr) include every generated screen.
+- **Full-screen preview:** Android `app/preview/[id].tsx` and web `/preview/:projectId`.
+  - Mobile / Tablet / Desktop buttons on top, every screen as a tab, and a download menu.
+  - It opens automatically when a new generation finishes.
+- **Gemini model defaults updated:** text `gemini-flash-latest`, images `gemini-nano-banana-2.1` (`gemini-2.5-*` is being retired).
+  - If you set `GEMINI_IMAGE_MODEL_DEFAULT` / `GEMINI_TEXT_MODEL_DEFAULT` on Render, update or delete them.

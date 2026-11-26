@@ -12,7 +12,8 @@ export function createFakeDb() {
     async delete() { store.delete(path); },
     collection: (c: string) => col(`${path}/${c}`),
   });
-  const col = (name: string) => ({ doc: (id: string) => docRef(`${name}/${id}`) });
+  let seq = 0;
+  const col = (name: string) => ({ doc: (id: string) => docRef(`${name}/${id}`), async add(v: Data) { const r = docRef(`${name}/auto${++seq}`); await r.set(v); return r; } });
   const db = {
     collection: col,
     async runTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {

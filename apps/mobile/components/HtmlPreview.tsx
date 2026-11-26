@@ -16,7 +16,7 @@ import { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reani
 const CSP = "default-src 'none'; script-src 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src https: data: blob:; connect-src 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'";
 const WIDTH = { MOBILE: 390, TABLET: 834, DESKTOP: 1280, AGNOSTIC: 390 } as const;
 
-function HtmlPreviewImpl({ html, device = 'MOBILE', height = 520 }: { html: string; device?: keyof typeof WIDTH; height?: number }) {
+function HtmlPreviewImpl({ html, device = 'MOBILE', height = 520, radius = 16, bordered = true }: { html: string; device?: keyof typeof WIDTH; height?: number | 'fill'; radius?: number; bordered?: boolean }) {
   const c = useColors();
   const doc = useMemo(() => {
     const head = `<meta http-equiv="Content-Security-Policy" content="${CSP}"><meta name="viewport" content="width=${WIDTH[device]}, user-scalable=yes"><script>document.addEventListener('click',function(e){var a=e.target.closest('a,button,[type=submit]');if(a){e.preventDefault();}},true);document.addEventListener('submit',function(e){e.preventDefault()},true);</script>`;
@@ -32,7 +32,7 @@ function HtmlPreviewImpl({ html, device = 'MOBILE', height = 520 }: { html: stri
   useEffect(() => { setReady(false); op.value = 0; }, [doc, op]);
   const fade = useAnimatedStyle(() => ({ opacity: op.value, transform: [{ scale: 0.985 + op.value * 0.015 }] }));
   return (
-    <View style={{ height, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: c.border, backgroundColor: c.card }}>
+    <View style={{ ...(height === 'fill' ? { flex: 1 } : { height }), borderRadius: radius, overflow: 'hidden', borderWidth: bordered ? 1 : 0, borderColor: c.border, backgroundColor: c.card }}>
       {!ready && <View style={{ position: 'absolute', inset: 0, padding: 16, gap: 12 }}><Skeleton height={28} width="55%" /><Skeleton height={140} /><Skeleton height={14} width="80%" /><Skeleton height={14} width="65%" /><Skeleton height={44} width="40%" radius={12} /></View>}
       <Animated.View style={[{ flex: 1 }, fade]}>
       <WebView
