@@ -297,3 +297,47 @@ export function stitchPromptFor(plan: DesignPlan, index: number, kind: ProjectKi
   ];
   return parts.filter(Boolean).join('\n\n').slice(0, 7000);
 }
+
+// ───────────────────────── Automatic choices (no pickers in the apps) ─────────────────────────
+
+/** Picks the device from the request: websites/dashboards → desktop, "tablet/ipad" → tablet, else mobile. */
+export function autoDevice(prompt: string, kind: ProjectKind, fallback: DeviceType = 'MOBILE'): DeviceType {
+  if (kind === 'website') return 'DESKTOP';
+  const p = prompt.toLowerCase();
+  if (/\b(tablet|ipad)\b/.test(p)) return 'TABLET';
+  if (/\b(mobile|android|ios|iphone|phone)\b/.test(p)) return 'MOBILE';
+  if (/\b(website|web ?site|landing ?page|web ?page|web ?app|webapp|desktop|saas|admin (panel|dashboard)|portfolio site|homepage|e-?commerce site|blog)\b/.test(p)) return 'DESKTOP';
+  if (/\bapp\b/.test(p)) return 'MOBILE';
+  return fallback === 'AGNOSTIC' ? 'MOBILE' : fallback;
+}
+
+/** Project kind for a fresh studio project created from a prompt. */
+export function autoKind(prompt: string): 'ui' | 'website' {
+  return /\b(website|web ?site|landing ?page|web ?page|homepage|portfolio site|blog site)\b/i.test(prompt) ? 'website' : 'ui';
+}
+
+/**
+ * Small Gemini task: turns a short chat request ("make it premium") into a precise, self-contained
+ * Stitch edit instruction. Uses the user's own Gemini key only; silently falls back to the raw text.
+ */
+export async function enhanceEditInstruction(uid: string, message: string, ctx: { pageName: string; section?: string }): Promise<string> {
+  const geminiOn = (await listConnectionStatus(uid).catch(() => [])).some((c) => c.provider === 'gemini' && c.connected);
+  if (!geminiOn) return message;
+  try {
+    const out = await Promise.race([
+      gemini.generateText(uid, [
+        'Rewrite the user\'s change request for Google Stitch, which edits an existing UI screen.',
+        `Screen: "${ctx.pageName}".${ctx.section ? ` Only the "${ctx.section}" section may change.` : ''}`,
+        'Write 2-5 concrete sentences: exactly what to change (layout, colours as hex, typography, spacing, content), and say that everything else stays the same.',
+        'No questions, no preamble, no markdown. Output only the instruction.',
+        `User request: """${message.slice(0, 1500)}"""`,
+      ].join('\n')),
+      new Promise<string>((_, rej) => setTimeout(() => rej(new Error('timeout')), 20_000)),
+    ]);
+    const clean = String(out ?? '').replace(/^["'\s]+|["'\s]+$/g, '').trim();
+    return clean.length >= 10 ? `${clean.slice(0, 1800)}\n\n(Original request: ${message.slice(0, 300)})` : message;
+  } catch (e) {
+    logger.warn({ uid, msg: (e as Error).message }, 'gemini edit enhancement failed; using raw instruction');
+    return message;
+  }
+}

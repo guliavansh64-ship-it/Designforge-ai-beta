@@ -31,9 +31,9 @@ export type Purchase =
   | { kind: 'plan'; planId: PlanId; cycle: 'monthly' | 'annual' | 'one_time' }
   | { kind: 'pack'; packId: string };
 
-interface Priced { amountPaise: number; credits: number; description: string; plan?: PlanDefinition; periodDays?: number }
+export interface Priced { amountPaise: number; credits: number; description: string; plan?: PlanDefinition; periodDays?: number }
 
-async function price(p: Purchase): Promise<Priced> {
+export async function price(p: Purchase): Promise<Priced> {
   if (p.kind === 'pack') {
     const pack = CREDIT_PACKS.find((x) => x.id === p.packId);
     if (!pack) throw Errors.validation('Unknown credit pack');
@@ -51,7 +51,7 @@ async function price(p: Purchase): Promise<Priced> {
   return { amountPaise: inr * 100, credits: creditsNow, description: `${plan.name} ${p.cycle}`, plan, periodDays: p.cycle === 'annual' ? 365 : 30 };
 }
 
-async function applyCoupon(code: string | undefined, uid: string, priced: Priced, p: Purchase) {
+export async function applyCoupon(code: string | undefined, uid: string, priced: Priced, p: Purchase) {
   if (!code) return { amountPaise: priced.amountPaise, coupon: undefined as string | undefined };
   const ref = db().collection(C.coupons).doc(code.toUpperCase());
   const c = (await ref.get()).data();

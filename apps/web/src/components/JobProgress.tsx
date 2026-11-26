@@ -4,7 +4,6 @@ import { api } from '../lib/api';
 import { useToast } from '../lib/toast';
 import type { GenerationJob } from '../lib/types';
 import { Button, Card, Progress, cx } from './ui';
-import { PlanSummary } from './PlanSummary';
 
 /** The 9 stages of the Auto Design Improvement engine (shown as an honest live checklist). */
 export const IMPROVE_STAGES = [
@@ -54,7 +53,7 @@ export function JobProgress({ job, onClose, compact }: { job: GenerationJob; onC
           <p className="muted mt-0.5 truncate text-sm">{job.stage}</p>
           {!terminal && <Progress value={job.progress} className="mt-3" />}
           {job.status === 'running' && job.progress >= 20 && job.progress < 85 && <p className="muted mt-2 text-xs">Stitch generations typically take 30–120 seconds. You can leave this page — you'll get a notification.</p>}
-          {job.plan && job.type === 'generate' && <div className="mt-3"><PlanSummary plan={job.plan} done={job.screensDone ?? 0} active={!terminal} failed={job.status === 'failed'} defaultOpen={!compact && !terminal} /></div>}
+          {(job as any).screenNames?.length > 1 && job.type === 'generate' && <div className="mt-3 space-y-1 rounded-xl border border-ink-200 p-3 text-xs dark:border-ink-800">{((job as any).screenNames as string[]).map((n, i) => { const d = job.screensDone ?? 0; return <p key={n + i} className={i < d ? 'text-emerald-500' : i === d && !terminal ? 'font-semibold text-forge-500' : 'muted'}>{i < d ? '✓' : i === d && !terminal ? '●' : '○'} {i + 1}. {n}</p>; })}</div>}
           {job.warnings?.map((w, i) => <p key={i} className="mt-2 text-xs text-amber-600 dark:text-amber-400">{w}</p>)}
           {job.error && <p className="mt-3 rounded-xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-300">{job.error.message}</p>}
         </div>

@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Coins, Gift, ArrowDownRight, ArrowUpRight, RotateCcw } from 'lucide-react';
 import { CREDIT_COSTS } from '@designforge/shared';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useApi, timeAgo } from '../lib/hooks';
 import { useToast } from '../lib/toast';
-import { openCheckout } from '../lib/razorpay';
+import { startPurchase, waitForZetpay, type PlansInfo } from '../lib/checkout';
 import { Badge, BarChart, Button, Card, ErrorBox, PageHeader } from '../components/ui';
 
 interface Txn { id: string; type: 'debit' | 'grant' | 'refund' | 'adjust'; op?: string; amount: number; status: string; reason?: string; createdAt: number }
-interface Plans { packs: { id: string; credits: number; priceInr: number }[]; razorpayKeyId: string | null }
+interface Plans extends PlansInfo { packs: { id: string; credits: number; priceInr: number }[] }
 const OP_LABEL: Record<string, string> = { generate_flash: 'Generate (Flash)', generate_pro: 'Generate (Pro)', edit: 'AI edit', variants: 'Variations', improve_iteration: 'Improve iteration', logo_batch: 'Logo concepts', html_export: 'HTML export', react_export: 'React export', chat_edit: 'Chat edit' };
 
 export default function Credits() {
@@ -22,20 +23,32 @@ export default function Credits() {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<ApiError | null>(null);
 
+  const [params, setParams] = useSearchParams();
+  const [checking, setChecking] = useState(false);
+  // Back from the ZetPay page (/credits?zp_order=…): confirm via our server, never trust the URL.
+  useEffect(() => {
+    const id = params.get('zp_order') || sessionStorage.getItem('df_pending_order');
+    if (!id) return;
+    sessionStorage.removeItem('df_pending_order');
+    setParams({}, { replace: true });
+    setChecking(true);
+    waitForZetpay(id).then(async (s) => {
+      if (s === 'paid') { toast('success', 'Payment successful — your purchase is active.'); await Promise.all([refresh(), summary.reload()]); }
+      else if (s === 'failed') toast('error', 'Payment failed. If money was debited, your bank will reverse it automatically.');
+      else toast('info', 'Payment is still pending. It will be added automatically once confirmed — you will get a notification.');
+    }).finally(() => setChecking(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const buy = async (packId: string) => {
     setBusy(packId); setErr(null);
     try {
-      const o = await api.post<{ orderId: string; amount: number; keyId: string; description: string }>('/billing/orders', { purchase: { kind: 'pack', packId } });
-      await openCheckout({
-        keyId: o.keyId, orderId: o.orderId, amount: o.amount, description: o.description, email: me?.user.email, name: me?.user.displayName ?? undefined,
-        onSuccess: async (resp) => {
-          try { await api.post('/billing/verify', resp); toast('success', 'Payment verified — credits added.'); await Promise.all([refresh(), summary.reload()]); }
-          catch (e) { toast('error', `${(e as Error).message}. If you were charged, credits will be added automatically once Razorpay confirms (webhook).`); }
-        },
-        onFailure: (m) => toast('error', `Payment failed: ${m}. You have not been charged.`),
-        onDismiss: () => setBusy(null),
+      await startPurchase({ kind: 'pack', packId }, {
+        email: me?.user.email, name: me?.user.displayName ?? undefined,
+        onPaid: async () => { toast('success', 'Payment verified — credits added.'); await Promise.all([refresh(), summary.reload()]); },
+        onError: (m) => toast('error', m), onDismiss: () => setBusy(null),
       });
-    } catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
+    } catch (e) { setErr(e as ApiError); setBusy(null); }
   };
   const redeem = async () => {
     setBusy('code'); setErr(null);
@@ -48,6 +61,7 @@ export default function Credits() {
     <div>
       <PageHeader title="Credits & Usage" subtitle="DesignForge credits pay for platform features. Your Google Stitch / Gemini quota is separate and managed by Google for your account." />
       <ErrorBox error={err} className="mb-5" />
+      {checking && <Card className="mb-5 p-4 text-sm">⏳ Confirming your UPI payment with ZetPay… keep this page open.</Card>}
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="bg-gradient-to-br from-forge-500/15 to-ember-500/10 p-6">
           <p className="text-sm muted">Balance</p>
@@ -68,10 +82,11 @@ export default function Credits() {
           {i === 1 && <Badge tone="forge" className="absolute right-4 top-4">Best value</Badge>}
           <p className="font-display text-3xl font-semibold">{p.credits.toLocaleString('en-IN')}</p><p className="muted text-xs">credits · never expire while your account is active</p>
           <p className="mt-4 text-xl font-semibold">₹{p.priceInr.toLocaleString('en-IN')} <span className="muted text-xs font-normal">incl. taxes as applicable</span></p>
-          <Button className="mt-4 w-full" loading={busy === p.id} disabled={!plans.data?.razorpayKeyId} onClick={() => buy(p.id)}>Buy with UPI / card</Button>
+          <Button className="mt-4 w-full" loading={busy === p.id} disabled={!plans.data?.paymentsProvider || checking} onClick={() => buy(p.id)}>Buy with UPI</Button>
         </Card>
       ))}</div>
-      {plans.data && !plans.data.razorpayKeyId && <p className="muted mt-2 text-xs">Payments aren't configured on this server yet (RAZORPAY_KEY_ID missing).</p>}
+      {plans.data && !plans.data.paymentsProvider && <p className="muted mt-2 text-xs">Payments are temporarily unavailable. Please try again later.</p>}
+      {plans.data?.paymentsProvider === 'zetpay' && <p className="muted mt-2 text-xs">Secure UPI payment via ZetPay (GPay, PhonePe, Paytm, any UPI app). Credits are added the moment the payment is confirmed.</p>}
 
       <Card className="mt-8 overflow-hidden">
         <div className="border-b border-ink-200 p-4 dark:border-ink-800"><h2 className="font-display font-semibold">Transactions</h2></div>

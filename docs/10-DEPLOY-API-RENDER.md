@@ -84,7 +84,7 @@ Render only runs the code you last pushed. If the app shows
 2. In Render, open **designforge-api → Manual Deploy → Clear build cache & deploy**.
 3. Open `https://<your-service>.onrender.com/health`. It must show:
    ```json
-   { "ok": true, "build": "2026-11-27", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
+   { "ok": true, "build": "2026-11-28", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
    ```
    If `build` is missing, the old code is still running.
 4. Optional: run a real end-to-end Stitch check from your PC. This uses 1 generation of *your* Stitch quota and deletes its test project afterwards:
@@ -117,3 +117,33 @@ Render only runs the code you last pushed. If the app shows
   - It opens automatically when a new generation finishes.
 - **Gemini model defaults updated:** text `gemini-flash-latest`, images `gemini-nano-banana-2.1` (`gemini-2.5-*` is being retired).
   - If you set `GEMINI_IMAGE_MODEL_DEFAULT` / `GEMINI_TEXT_MODEL_DEFAULT` on Render, update or delete them.
+
+## Build 2026-11-28: ZetPay UPI payments, push notifications, automatic generation, Assistant fixes
+
+**New Render environment variable (required for payments):**
+
+| Key | Value |
+|---|---|
+| `ZETPAY_API_KEY` | your ZetPay developer key (server only, never in the app) |
+
+`RENDER_EXTERNAL_URL` is set by Render automatically and is used for the ZetPay return page
+(`/api/billing/zetpay/return/app|web`). Only set `PUBLIC_API_URL` if you use a custom domain.
+Razorpay variables can stay empty. When `ZETPAY_API_KEY` is set, ZetPay is the payment provider.
+
+**ZetPay notes**
+- Switch the ZetPay dashboard from **Test mode** to **Live mode** to take real money. In test mode the payment page is a simulator.
+- ZetPay accepts ₹1–₹5,000 per order. Premium annual (₹12,470) and Lifetime (₹14,999) show "Not available via UPI". You can lower those prices in Admin → Plans if you want to sell them.
+- Plans are prepaid for 30 days or 1 year, with no auto-debit. Users get a push before the plan expires.
+- Credits are granted only after the server checks `order-status` = `success` with ZetPay. A reconciler checks recent pending orders every 75 s, so the purchase still completes if the buyer closes the app early.
+
+**Push notifications**: these use Firebase Cloud Messaging through the existing service account. No Expo/EAS account is needed.
+- Automatic pushes: design ready, design failed, payment success, payment failed, low credits (once a day), plan expiring, plan expired, support reply, welcome.
+- Manual pushes: Admin → Push notifications on the web, or Settings → "Admin · Send push notification" in the app (admins only). You can send to all users, to everyone on one plan, or to one user by email or uid.
+- The phone registers its push token after sign-in, so users must install the 2026-11-28 APK.
+
+**Automatic generation**: the Studio has one prompt box and one button. The server chooses everything else:
+- One screen or a full app, and how many screens.
+- Device and theme.
+- The Stitch model: 3.8 Flash, with automatic retry on 3.5 Flash-Lite.
+- The hidden prompt enhancement. Gemini runs on the user's own key when it is connected; otherwise the built-in planner is used. The enhanced prompts are never returned to clients.
+Gemini is used only for enhancement and for rewriting short chat edit requests. Stitch does every design.

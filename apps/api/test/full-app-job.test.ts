@@ -10,13 +10,16 @@ vi.mock('../src/services/notify.js', () => ({ notify: vi.fn(async () => undefine
 vi.mock('../src/services/logos.js', () => ({ runLogoJob: vi.fn() }));
 vi.mock('../src/services/blobs.js', () => ({ putBlob: vi.fn(), persistRemoteImage: vi.fn(async () => undefined) }));
 const prompts: string[] = [];
+const models: string[] = [];
 let failOn = -1;
+let failStatus = 502;
+let failCode = 'STITCH_ERROR';
 vi.mock('../src/services/stitch.js', () => ({
   stitchEngine: {
     ensureProject: async () => 'sp_1',
-    generate: async (_u: string, _p: string, prompt: string) => {
-      prompts.push(prompt);
-      if (prompts.length - 1 === failOn) { const { AppError } = await import('../src/lib/errors.js'); throw new AppError(502, 'STITCH_ERROR', 'boom'); }
+    generate: async (_u: string, _p: string, prompt: string, _d: string, model: string) => {
+      prompts.push(prompt); models.push(model);
+      if (prompts.length - 1 === failOn) { const { AppError } = await import('../src/lib/errors.js'); throw new AppError(failStatus, failCode, 'boom'); }
       return { html: `<html><body><h1>${prompts.length}</h1></body></html>`, screenId: `scr_${prompts.length}` };
     },
   },
@@ -48,7 +51,7 @@ async function newProject() {
 }
 
 describe('full-app generation job', () => {
-  beforeEach(async () => { fake.store.clear(); prompts.length = 0; failOn = -1; await newProject(); });
+  beforeEach(async () => { fake.store.clear(); prompts.length = 0; models.length = 0; failOn = -1; await newProject(); });
 
   it('"create a fitness app" → 4 themed screens on 4 pages, charged per screen', async () => {
     const job = await jobs.enqueue({ ownerId: 'u1', projectId: 'p1', type: 'generate', prompt: 'create a fitness app',
@@ -68,8 +71,22 @@ describe('full-app generation job', () => {
     expect(await credits.getBalance('u1')).toBe(40 - 4 * 2);
   });
 
+  it('a transient Stitch error is retried automatically on the fast model', async () => {
+    failOn = 2; failStatus = 502; failCode = 'STITCH_ERROR';
+    const job = await jobs.enqueue({ ownerId: 'u1', projectId: 'p1', type: 'generate', prompt: 'create a fitness app',
+      payload: { prompt: 'create a fitness app', deviceType: 'MOBILE', model: 'GEMINI_3_8_FLASH', pageId: 'pg_first', enhance: true, mode: 'app', maxScreens: 4 },
+      op: 'generate_flash', idempotencyKey: 'fullapp-test-retry', priority: false });
+    const done = await waitDone(job.id);
+    expect(done.status).toBe('succeeded');
+    expect(done.resultVersionIds).toHaveLength(4);
+    expect(prompts).toHaveLength(5);
+    expect(models[2]).toBe('GEMINI_3_8_FLASH');
+    expect(models[3]).toBe('GEMINI_3_5_FLASH_LITE');
+    expect(await credits.getBalance('u1')).toBe(40 - 4 * 2);
+  });
+
   it('a failing later screen keeps finished screens and refunds only that screen', async () => {
-    failOn = 2;
+    failOn = 2; failStatus = 400; failCode = 'STITCH_INVALID_REQUEST';
     const job = await jobs.enqueue({ ownerId: 'u1', projectId: 'p1', type: 'generate', prompt: 'create a fitness app',
       payload: { prompt: 'create a fitness app', deviceType: 'MOBILE', model: 'GEMINI_3_8_FLASH', pageId: 'pg_first', enhance: true, mode: 'app', maxScreens: 4 },
       op: 'generate_flash', idempotencyKey: 'fullapp-test-2', priority: false });
@@ -80,9 +97,9 @@ describe('full-app generation job', () => {
     expect(await credits.getBalance('u1')).toBe(40 - 3 * 2);
   });
 
-  it('legacy clients (no enhance/mode) still get exactly one screen on the given page', async () => {
-    const job = await jobs.enqueue({ ownerId: 'u1', projectId: 'p1', type: 'generate', prompt: 'create a fitness app',
-      payload: { prompt: 'create a fitness app', deviceType: 'MOBILE', model: 'GEMINI_3_8_FLASH', pageId: 'pg_first' },
+  it('automatic mode: a specific screen request gets exactly one (enhanced) screen on the given page', async () => {
+    const job = await jobs.enqueue({ ownerId: 'u1', projectId: 'p1', type: 'generate', prompt: 'a login screen with email, password and Google sign-in',
+      payload: { prompt: 'a login screen with email, password and Google sign-in', deviceType: 'MOBILE', model: 'GEMINI_3_8_FLASH', pageId: 'pg_first' },
       op: 'generate_flash', idempotencyKey: 'fullapp-test-3', priority: false });
     const done = await waitDone(job.id);
     expect(done.status).toBe('succeeded');

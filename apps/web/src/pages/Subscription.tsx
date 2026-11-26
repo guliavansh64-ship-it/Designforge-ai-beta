@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth';
 import { useApi, inr } from '../lib/hooks';
 import { useToast } from '../lib/toast';
 import { openCheckout } from '../lib/razorpay';
+import { canAfford, startPurchase, type PlansInfo } from '../lib/checkout';
 import { Badge, Button, Card, ErrorBox, Modal, PageHeader, Tabs, cx } from '../components/ui';
 
 const FEATURE_LABEL: Record<string, string> = { ui_generation: 'UI generation via your Stitch', website_studio: 'Website Studio', logo_studio: 'Logo & Brand Studio', html_export: 'HTML export', react_export: 'React + TypeScript export', auto_improve: 'Auto-improve (multi-iteration)', variants: 'Design variations', pro_model: '', priority_queue: 'Priority queue', project_sharing: 'Project sharing' };
@@ -15,7 +16,7 @@ interface Payment { id: string; status: string; amountPaise: number; description
 export default function Subscription() {
   const { me, refresh } = useAuth();
   const toast = useToast();
-  const plans = useApi<{ plans: PlanDefinition[]; razorpayKeyId: string | null }>('/plans');
+  const plans = useApi<PlansInfo & { plans: PlanDefinition[] }>('/plans');
   const summary = useApi<{ payments: Payment[] }>('/billing/summary');
   const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly');
   const [autoRenew, setAutoRenew] = useState(true);
@@ -30,6 +31,13 @@ export default function Subscription() {
     setBusy(p.id); setErr(null);
     const done = async (msg: string) => { toast('success', msg); await Promise.all([refresh(), summary.reload()]); };
     try {
+      if (plans.data?.paymentsProvider === 'zetpay') {
+        await startPurchase({ kind: 'plan', planId: p.id, cycle: p.id === 'lifetime' ? 'one_time' : cycle }, {
+          coupon, email: me?.user.email, name: me?.user.displayName ?? undefined,
+          onPaid: () => done(`Welcome to ${p.name}!`), onError: (m) => toast('error', m),
+        });
+        return;
+      }
       if (p.id !== 'lifetime' && autoRenew && !coupon) {
         const s = await api.post<{ subscriptionId: string; keyId: string }>('/billing/subscriptions', { planId: p.id, cycle });
         await openCheckout({ keyId: s.keyId, subscriptionId: s.subscriptionId, description: `${p.name} (${cycle}, auto-renew)`, email: me?.user.email, name: me?.user.displayName ?? undefined,
@@ -66,11 +74,11 @@ export default function Subscription() {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={cycle} onChange={setCycle} items={[{ id: 'monthly', label: 'Monthly' }, { id: 'annual', label: 'Annual · save ~20%' }]} />
         <div className="flex items-center gap-3 text-sm">
-          <label className="flex items-center gap-2"><input type="checkbox" className="accent-forge-500" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} />Auto-renew</label>
+          {plans.data?.paymentsProvider === 'razorpay' && <label className="flex items-center gap-2"><input type="checkbox" className="accent-forge-500" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} />Auto-renew</label>}
           <input className="field !w-36 !py-1.5" placeholder="Coupon" value={coupon} onChange={(e) => setCoupon(e.target.value.toUpperCase())} maxLength={40} />
         </div>
       </div>
-      {coupon && autoRenew && <p className="muted -mt-3 mb-4 text-xs">Coupons apply to one-time payments; auto-renew is turned off while a coupon is entered.</p>}
+      {coupon && autoRenew && plans.data?.paymentsProvider === 'razorpay' && <p className="muted -mt-3 mb-4 text-xs">Coupons apply to one-time payments; auto-renew is turned off while a coupon is entered.</p>}
       <ErrorBox error={err} className="mb-5" />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {plans.data?.plans.filter((p) => p.active).map((p) => {
@@ -85,12 +93,12 @@ export default function Subscription() {
               <ul className="mt-5 flex-1 space-y-2 text-sm">{p.features.filter((f) => FEATURE_LABEL[f] !== '').map((f) => <li key={f} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />{FEATURE_LABEL[f] ?? f}</li>)}
                 {p.maxImproveIterations > 1 && <li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />Up to {p.maxImproveIterations} improve iterations</li>}</ul>
               {p.id === 'free' ? <Button className="mt-6" variant="secondary" disabled>{isCur ? 'Current plan' : 'Included'}</Button>
-                : <Button className="mt-6" variant={p.id === 'premium' ? 'ember' : 'primary'} disabled={isCur || !plans.data?.razorpayKeyId} loading={busy === p.id} onClick={() => purchase(p)}>{isCur ? 'Current plan' : `Get ${p.name}`}</Button>}
+                : <Button className="mt-6" variant={p.id === 'premium' ? 'ember' : 'primary'} disabled={isCur || !plans.data?.paymentsProvider || !canAfford(plans.data, price)} loading={busy === p.id} onClick={() => purchase(p)}>{isCur ? 'Current plan' : !canAfford(plans.data, price) ? 'Not available via UPI' : `Get ${p.name}`}</Button>}
             </Card>
           );
         })}
       </div>
-      <p className="muted mt-4 text-xs">Payments by Razorpay: UPI, cards, netbanking & wallets. Prices in INR. Lifetime covers DesignForge platform features for the life of the product; it does not include Google's Stitch/Gemini usage, which stays on your own account. Annual plans grant credits monthly.</p>
+      <p className="muted mt-4 text-xs">{plans.data?.paymentsProvider === 'zetpay' ? `Secure UPI payments via ZetPay (max ₹${(plans.data.maxAmountInr ?? 5000).toLocaleString('en-IN')} per payment). Plans are prepaid for 30 days / 1 year — no auto-debit; we remind you before expiry.` : 'Payments by Razorpay: UPI, cards, netbanking & wallets.'} Prices in INR. Lifetime covers DesignForge platform features for the life of the product; it does not include Google's Stitch/Gemini usage, which stays on your own account. Annual plans grant credits monthly.</p>
 
       <Card className="mt-8 overflow-hidden">
         <div className="flex items-center gap-2 border-b border-ink-200 p-4 dark:border-ink-800"><Receipt className="h-4 w-4" /><h2 className="font-display font-semibold">Billing history</h2></div>

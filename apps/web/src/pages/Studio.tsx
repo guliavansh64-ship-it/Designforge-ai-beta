@@ -1,4 +1,4 @@
-import { STITCH_MODELS, normalizeStitchModel, type StitchModel } from '@designforge/shared';
+import { normalizeStitchModel, type StitchModel } from '@designforge/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -152,7 +152,8 @@ export default function Studio() {
   // ── AI actions
   const [aiPrompt, setAiPrompt] = useState('');
   const [section, setSection] = useState('');
-  const [model, setModel] = useState<StitchModel>(normalizeStitchModel(me?.preferences.defaultModel));
+  // Model is chosen automatically on the server; kept only for the request shape of older endpoints.
+  const [model] = useState<StitchModel>(normalizeStitchModel(undefined));
   const [aiErr, setAiErr] = useState<ApiError | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const run = async (path: string, body: Record<string, unknown>) => {
@@ -248,10 +249,6 @@ export default function Studio() {
                 <textarea id="aip" className="field min-h-[96px]" maxLength={4000} value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} placeholder={page?.currentVersionId ? 'e.g. Replace the hero with a split layout and a product screenshot' : 'What should this page contain?'} />
                 <div className="mt-2 flex flex-wrap gap-1.5">{quickEdits.map((q) => <button key={q} type="button" onClick={() => setAiPrompt(q)} className="surface-2 rounded-full px-2.5 py-1 text-[11px] muted hover:text-ink-900 dark:hover:text-white">{q}</button>)}</div>
               </div>
-              <label className="flex items-center justify-between text-xs"><span className="muted">Model</span>
-                <select className="field !w-auto !py-1.5 !text-xs" value={model} onChange={(e) => setModel(e.target.value as any)}>
-                  {STITCH_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.hint}</option>)}
-                </select></label>
               <ErrorBox error={aiErr} className="!p-3 !text-xs" />
               {page?.currentVersionId ? (
                 <div className="grid gap-2">

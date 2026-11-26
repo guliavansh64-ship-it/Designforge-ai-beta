@@ -25,9 +25,12 @@ function Gate() {
   // Tapping a push notification deep-links into the project.
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((r) => {
-      const d = r.notification.request.content.data as { projectId?: string; kind?: string };
-      if (d?.projectId) router.push(`/project/${d.projectId}`);
-      else if (d?.kind === 'billing') router.push('/billing');
+      const d = (r.notification.request.content.data ?? {}) as { projectId?: string; kind?: string; type?: string };
+      if (d.projectId) router.push(`/project/${d.projectId}`);
+      else if (d.kind === 'billing' || d.type?.startsWith('payment') || d.type === 'credits_low' || d.type?.startsWith('subscription')) router.push('/billing');
+      else if (d.kind === 'studio') router.push('/(tabs)/studio');
+      else if (d.kind === 'projects') router.push('/(tabs)/projects');
+      else router.push('/notifications');
     });
     return () => sub.remove();
   }, [router]);
@@ -49,6 +52,7 @@ function Gate() {
       <Stack.Screen name="improve" options={{ title: 'Improve a design' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications', animation: 'fade_from_bottom' }} />
       <Stack.Screen name="support" options={{ title: 'Help & support' }} />
+      <Stack.Screen name="admin-push" options={{ title: 'Send push (admin)' }} />
     </Stack>
   );
 }

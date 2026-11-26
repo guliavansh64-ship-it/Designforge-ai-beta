@@ -38,7 +38,7 @@ export function useJob(jobId: string | null, onDone?: (j: Job, sawRunning: boole
         if (stop) return;
         // PERF: only re-render when something visible changed (polling every few seconds otherwise
         // re-rendered the whole project screen, incl. the WebView preview).
-        setJob((prev) => (prev && prev.id === j.id && prev.status === j.status && prev.progress === j.progress && prev.stage === j.stage && prev.error?.message === j.error?.message && prev.screensDone === j.screensDone && !!prev.plan === !!j.plan && prev.warnings?.length === j.warnings?.length ? prev : j));
+        setJob((prev) => (prev && prev.id === j.id && prev.status === j.status && prev.progress === j.progress && prev.stage === j.stage && prev.error?.message === j.error?.message && prev.screensDone === j.screensDone && prev.screenNames?.length === j.screenNames?.length && prev.warnings?.length === j.warnings?.length ? prev : j));
         if (['succeeded', 'failed', 'cancelled'].includes(j.status)) { cb.current?.(j, live); return; }
         live = true;
       } catch { /* keep polling */ }

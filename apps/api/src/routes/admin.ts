@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { auth, db, C } from '../lib/firebase.js';
 import { ah, validate } from '../middleware/validate.js';
 import { invalidateAuthCache, requireAdmin } from '../middleware/auth.js';
-import { adminAudit, notify } from '../services/notify.js';
+import { adminAudit, notify, pushToUser } from '../services/notify.js';
 import { invalidatePlans, listPlans, getEntitlements } from '../services/plans.js';
 import { invalidateSettingsCache, getSystemSettings } from '../services/settings.js';
 import { listConnectionStatus } from '../services/connections.js';
@@ -223,6 +223,53 @@ adminRouter.patch('/announcements/:id', requireAdmin('admin'), validate(z.object
   await db().collection(C.announcements).doc(req.params.id).update({ active: req.body.active });
   await adminAudit(req.user!.uid, 'announcement.toggle', req.params.id, req.body);
   res.json({ ok: true });
+}));
+
+// ── Push notifications (manual). Automatic pushes are sent by notify() on events.
+const pushBody = z.object({
+  title: z.string().trim().min(2).max(120), body: z.string().trim().min(2).max(500),
+  audience: z.enum(['all', 'plan', 'user']), planId: z.enum(['free', 'pro', 'premium', 'lifetime']).optional(),
+  user: z.string().trim().max(200).optional(), // email or uid
+  link: z.enum(['none', 'studio', 'billing', 'notifications', 'projects']).default('none'),
+});
+adminRouter.post('/push', requireAdmin('admin'), validate(pushBody), ah(async (req, res) => {
+  const b = req.body as z.infer<typeof pushBody>;
+  let uids: string[] = [];
+  if (b.audience === 'user') {
+    if (!b.user) throw Errors.validation('Enter the user\'s email or uid');
+    const u = b.user.includes('@') ? await auth().getUserByEmail(b.user).catch(() => null) : await auth().getUser(b.user).catch(() => null);
+    if (!u) throw Errors.notFound('User');
+    uids = [u.uid];
+  } else if (b.audience === 'plan') {
+    if (!b.planId) throw Errors.validation('Choose a plan');
+    if (b.planId === 'free') {
+      const paid = new Set((await safeQuery(db().collection(C.subscriptions), { where: [['status', '==', 'active']], fallbackCap: 5000 })).filter((d) => d.get('planId') !== 'free').map((d) => d.id));
+      uids = (await safeQuery(db().collection(C.users), { fallbackCap: 5000, limit: 5000 })).map((d) => d.id).filter((id) => !paid.has(id));
+    } else {
+      uids = (await safeQuery(db().collection(C.subscriptions), { where: [['planId', '==', b.planId], ['status', '==', 'active']], fallbackCap: 5000 })).map((d) => d.id);
+    }
+  } else {
+    uids = (await safeQuery(db().collection(C.users), { fallbackCap: 5000, limit: 5000 })).filter((d) => d.get('status') !== 'suspended').map((d) => d.id);
+  }
+  const data: Record<string, string> = { kind: b.link === 'none' ? 'announcement' : b.link };
+  let users = 0; let devices = 0; let failed = 0;
+  // Sequential in small batches: gentle on Firestore free-tier limits.
+  for (let i = 0; i < uids.length; i += 20) {
+    const batch = uids.slice(i, i + 20);
+    const results = await Promise.all(batch.map(async (uid) => {
+      await db().collection(C.notifications).add({ ownerId: uid, type: 'admin_push', title: b.title, body: b.body, data, read: false, createdAt: Date.now() });
+      return pushToUser(uid, b.title, b.body, { type: 'admin_push', ...data });
+    }));
+    for (const r of results) { users++; devices += r.sent; failed += r.failed; }
+  }
+  const clean = Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined));
+  const ref = await db().collection('push_campaigns').add({ ...clean, by: req.user!.uid, users, devices, failed, createdAt: Date.now() });
+  await adminAudit(req.user!.uid, 'push.send', ref.id, { audience: b.audience, planId: b.planId ?? null, users, devices });
+  res.json({ ok: true, users, devices, failed });
+}));
+adminRouter.get('/push', ah(async (_req, res) => {
+  const s = await db().collection('push_campaigns').orderBy('createdAt', 'desc').limit(30).get();
+  res.json({ campaigns: s.docs.map((d) => ({ id: d.id, ...d.data() })) });
 }));
 
 // ── Support

@@ -11,6 +11,7 @@ const server = app.listen(env.PORT, '0.0.0.0', () => logger.info(`DesignForge AP
 server.requestTimeout = 330_000; // exports can take a while
 recoverInterruptedJobs().catch((e) => logger.error({ err: e }, 'job recovery failed'));
 startStaleJobSweeper();
+(await import('./services/zetpay.js')).startZetpayReconciler();
 startSchedulers();
 
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {

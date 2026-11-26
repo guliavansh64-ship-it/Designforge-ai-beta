@@ -8,11 +8,42 @@ import { listPlans, getEntitlements } from '../services/plans.js';
 import { cancelSubscription, createAutoRenewSubscription, createOrder, verifyAndFulfill, verifySubscriptionSignature } from '../services/billing.js';
 import * as credits from '../services/credits.js';
 import { AppError, Errors } from '../lib/errors.js';
-import { env } from '../config.js';
+import { env, razorpayEnabled, zetpayEnabled } from '../config.js';
+import { checkZetpayOrder, createZetpayOrder, ZETPAY_MAX_INR } from '../services/zetpay.js';
 import { safeQuery } from '../lib/safeQuery.js';
 
 export const billingPublicRouter = Router();
-billingPublicRouter.get('/plans', ah(async (_req, res) => res.json({ plans: await listPlans(), packs: CREDIT_PACKS, razorpayKeyId: env.RAZORPAY_KEY_ID ?? null })));
+const provider = () => (zetpayEnabled ? 'zetpay' : razorpayEnabled ? 'razorpay' : null);
+billingPublicRouter.get('/plans', ah(async (_req, res) => res.json({
+  plans: await listPlans(), packs: CREDIT_PACKS,
+  paymentsProvider: provider(),
+  paymentsEnabled: !!provider(),
+  maxAmountInr: provider() === 'zetpay' ? ZETPAY_MAX_INR : null,
+  // Only exposed when Razorpay is the active provider (legacy clients).
+  razorpayKeyId: provider() === 'razorpay' ? env.RAZORPAY_KEY_ID ?? null : null,
+})));
+
+/**
+ * ZetPay redirects the buyer here (?zp_order=…&zp_result=…). The query is NOT trusted: we check the
+ * order server-side, then bounce the browser back to the app (deep link) or the website.
+ */
+billingPublicRouter.get('/billing/zetpay/return/:client', ah(async (req, res) => {
+  const orderId = String(req.query.zp_order ?? '').slice(0, 80);
+  let status = 'pending';
+  if (orderId) {
+    try { status = (await checkZetpayOrder(orderId)).status; } catch { status = 'unknown'; }
+  }
+  const qs = `zp_order=${encodeURIComponent(orderId)}&status=${encodeURIComponent(status)}`;
+  const target = req.params.client === 'web' ? `${env.PUBLIC_WEB_URL.replace(/\/$/, '')}/credits?${qs}` : `designforge://billing?${qs}`;
+  const ok = status === 'paid';
+  res.set('Cache-Control', 'no-store');
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DesignForge AI</title>
+<meta http-equiv="refresh" content="1;url=${target.replace(/"/g, '&quot;')}"></head>
+<body style="font-family:system-ui;background:#0b0b12;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center">
+<div><div style="font-size:42px">${ok ? '✅' : status === 'failed' ? '❌' : '⏳'}</div><h2>${ok ? 'Payment successful' : status === 'failed' ? 'Payment failed' : 'Checking your payment…'}</h2>
+<p style="color:#aaa">Returning to DesignForge AI…</p><a style="color:#a78bfa" href="${target.replace(/"/g, '&quot;')}">Tap here if nothing happens</a></div>
+<script>setTimeout(function(){location.replace(${JSON.stringify(target)})},300)</script></body></html>`);
+}));
 
 export const billingRouter = Router();
 
@@ -48,8 +79,20 @@ const purchase = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('pack'), packId: z.string() }),
 ]);
 
-billingRouter.post('/billing/orders', paymentLimiter, validate(z.object({ purchase, coupon: z.string().max(40).optional() })), ah(async (req, res) => {
-  res.json(await createOrder(req.user!.uid, req.body.purchase, req.body.coupon));
+billingRouter.post('/billing/orders', paymentLimiter, validate(z.object({ purchase, coupon: z.string().max(40).optional(), client: z.enum(['app', 'web']).default('app'), mobile: z.string().max(16).optional() })), ah(async (req, res) => {
+  if (zetpayEnabled) {
+    // ZetPay sells fixed periods: subscriptions become one-time purchases of 30 / 365 days.
+    const p = req.body.purchase;
+    res.json(await createZetpayOrder(req.user!.uid, p, { coupon: req.body.coupon, client: req.body.client, mobile: req.body.mobile }));
+    return;
+  }
+  res.json({ provider: 'razorpay', ...(await createOrder(req.user!.uid, req.body.purchase, req.body.coupon)) });
+}));
+
+/** Client polls this after returning from the payment page (server checks ZetPay; never trusts the client). */
+billingRouter.get('/billing/zetpay/status/:orderId', ah(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(await checkZetpayOrder(req.params.orderId, req.user!.uid));
 }));
 
 billingRouter.post('/billing/verify', paymentLimiter, validate(z.object({
@@ -60,6 +103,7 @@ billingRouter.post('/billing/verify', paymentLimiter, validate(z.object({
 }));
 
 billingRouter.post('/billing/subscriptions', paymentLimiter, validate(z.object({ planId: z.enum(['pro', 'premium']), cycle: z.enum(['monthly', 'annual']) })), ah(async (req, res) => {
+  if (zetpayEnabled) throw new AppError(400, 'USE_ONE_TIME', 'Auto-renew is not available with UPI. Buy the plan as a one-time 30-day / 1-year purchase instead.');
   res.json(await createAutoRenewSubscription(req.user!.uid, req.body.planId, req.body.cycle));
 }));
 
@@ -104,5 +148,5 @@ billingRouter.get('/billing/invoices/:id', ah(async (req, res) => {
 <h1>DesignForge AI — Invoice</h1><p>Invoice #: <b>${esc(d.invoiceNumber)}</b><br>Date: ${new Date(d.paidAt).toLocaleDateString('en-IN')}<br>Billed to: ${esc(req.user!.email)}</p>
 <table style="width:100%;border-top:1px solid #ddd"><tr><td>${esc(d.description)}</td><td class="r">₹${(d.amountPaise / 100).toFixed(2)}</td></tr>${d.coupon ? `<tr><td>Coupon ${esc(d.coupon)}</td><td class="r">−₹${((d.listAmountPaise - d.amountPaise) / 100).toFixed(2)}</td></tr>` : ''}
 <tr><td><b>Total paid</b></td><td class="r"><b>₹${(d.amountPaise / 100).toFixed(2)}</b></td></tr></table>
-<p style="color:#666;font-size:13px">Payment ID ${esc(d.paymentId)} via Razorpay (${esc(d.method)}). DesignForge plans grant platform features and credits only; Google Stitch/Gemini usage is governed by your own Google account limits.</p></body></html>`);
+<p style="color:#666;font-size:13px">Payment ID ${esc(d.paymentId)} via ${d.provider === 'zetpay' ? 'UPI (ZetPay)' : 'Razorpay'} (${esc(d.method)}). DesignForge plans grant platform features and credits only; Google Stitch/Gemini usage is governed by your own Google account limits.</p></body></html>`);
 }));

@@ -11,7 +11,7 @@ import { cancelJob, enqueue } from '../services/jobs.js';
 import { AppError, Errors } from '../lib/errors.js';
 import { getSystemSettings } from '../services/settings.js';
 import { safeQuery } from '../lib/safeQuery.js';
-import { enhance } from '../services/promptEnhancer.js';
+import { autoDevice, enhance } from '../services/promptEnhancer.js';
 import * as credits from '../services/credits.js';
 
 /**
@@ -22,17 +22,19 @@ import * as credits from '../services/credits.js';
  */
 export const generateRouter = Router();
 
+/** Job as seen by clients: never the payload or the internal enhanced plan (only screen names). */
+function publicJob(d: Record<string, any>) {
+  const { payload: _p, plan, ...job } = d;
+  return { ...job, ...(plan?.screens ? { screenNames: plan.screens.map((x: { name: string }) => x.name), appName: plan.appName } : {}) };
+}
+
 const device = z.enum(['MOBILE', 'DESKTOP', 'TABLET', 'AGNOSTIC']);
 // Accepts current IDs and retired 0.3.x IDs from older app versions; always yields a valid Stitch model.
-const model = z.string().max(40).optional().transform(normalizeStitchModel);
+// The model is chosen automatically (best Stitch model, auto-fallback to the fast one in the runner).
+const model = z.string().max(40).optional().transform(() => normalizeStitchModel(undefined));
 const hex = z.string().regex(/^#[0-9A-Fa-f]{3,8}$/);
-/** A plan previewed via POST /prompt/enhance may be sent back so generation uses exactly what the user saw. */
-const planSchema = z.object({
-  enhancer: z.enum(['gemini', 'built-in']), appName: z.string().trim().min(1).max(60), category: z.string().max(40), isFullApp: z.boolean(),
-  theme: z.object({ mood: z.string().max(200), primary: hex, accent: hex, background: hex, dark: z.boolean(), headingFont: z.string().max(60), bodyFont: z.string().max(60), corners: z.string().max(120) }),
-  designBrief: z.string().max(1500), navigation: z.array(z.string().max(40)).max(6),
-  screens: z.array(z.object({ name: z.string().trim().min(1).max(60), prompt: z.string().trim().min(10).max(2500) })).min(1).max(6),
-});
+/** Older app builds may send a previewed plan; it is ignored — the server always plans (hidden from users). */
+const planSchema = z.any();
 const idem = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, 'idempotencyKey must be 8–64 url-safe chars');
 
 async function preflight(uid: string, provider: 'stitch' | 'gemini', _m?: string) {
@@ -53,25 +55,31 @@ generateRouter.post('/projects/:id/generate', generationLimiter, validate(z.obje
   category: z.string().max(40).optional(), style: z.string().max(200).optional(), idempotencyKey: idem,
   // Prompt enhancement + full-app generation. Absent → legacy single-screen behaviour (older app builds).
   enhance: z.boolean().optional(), mode: z.enum(['auto', 'single', 'app']).optional(),
-  maxScreens: z.number().int().min(2).max(6).optional(), plan: planSchema.optional(),
+  maxScreens: z.number().int().min(2).max(6).optional(), plan: planSchema.optional(), auto: z.boolean().optional(),
   pageNames: z.array(z.string().trim().min(1).max(40)).max(6).optional(),
 })), ah(async (req, res) => {
   const uid = req.user!.uid;
   const project = await loadProject(req.params.id, uid, 'owner');
-  const pf = await preflight(uid, 'stitch', req.body.model);
+  const pf = await preflight(uid, 'stitch');
   if (project.kind === 'website' && !pf.plan.features.includes('website_studio')) throw Errors.feature('website studio');
-  const deviceType = req.body.deviceType ?? project.deviceType;
-  // A full app is charged per screen: screen 1 now, every further screen when it starts. Make sure
-  // the user can afford the whole app up front so it doesn't stop half-way.
-  if (req.body.mode === 'app' || (req.body.plan && req.body.plan.screens.length > 1)) {
-    const need = credits.costOf('generate_flash', req.body.plan?.screens.length ?? req.body.maxScreens ?? 5);
-    const bal = await credits.getBalance(uid);
-    if (bal < need) throw Errors.credits(need, bal);
-  }
+  /*
+   * Everything is chosen automatically (no pickers): one screen vs a full app, number of screens,
+   * device, theme/style (by the planner) and the Stitch model (best model, auto-fallback to the fast
+   * one). Client-sent style/model/mode from older app builds are ignored.
+   */
+  const hasDesigns = project.pages.some((x) => !!x.currentVersionId);
+  const deviceType = hasDesigns || req.body.pageId || req.body.newPageName ? project.deviceType : autoDevice(req.body.prompt, project.kind, project.deviceType);
+  if (!hasDesigns && deviceType !== project.deviceType) await db().collection(C.projects).doc(project.id).update({ deviceType }).catch(() => undefined);
+  // A full app is charged per screen as each one starts; plan only as many screens as the user can afford.
+  const per = credits.costOf('generate_flash', 1);
+  const bal = await credits.getBalance(uid);
+  if (bal < per) throw Errors.credits(per, bal);
+  const maxScreens = Math.max(2, Math.min(5, Math.floor(bal / per)));
+  const mode = hasDesigns || req.body.pageId || req.body.newPageName ? 'single' : bal < per * 2 ? 'single' : 'auto';
   const job = await enqueue({
     ownerId: uid, projectId: project.id, type: 'generate', prompt: req.body.prompt,
-    payload: { ...req.body, deviceType }, op: 'generate_flash',
-    idempotencyKey: req.body.idempotencyKey, priority: pf.priority, deviceType, model: req.body.model,
+    payload: { prompt: req.body.prompt, pageId: req.body.pageId, newPageName: req.body.newPageName, deviceType, enhance: true, mode, maxScreens, model: 'GEMINI_3_8_FLASH' },
+    op: 'generate_flash', idempotencyKey: req.body.idempotencyKey, priority: pf.priority, deviceType, model: 'GEMINI_3_8_FLASH',
   });
   res.status(202).json({ job });
 }));
@@ -88,7 +96,8 @@ generateRouter.post('/prompt/enhance', generationLimiter, validate(z.object({
 })), ah(async (req, res) => {
   const b = req.body;
   const plan = await enhance(req.user!.uid, { prompt: b.prompt, kind: b.kind, device: b.deviceType, style: b.style, category: b.category, mode: b.mode, maxScreens: b.maxScreens, pageNames: b.pageNames });
-  res.json({ plan, cost: credits.costOf('generate_flash', plan.screens.length) });
+  // The enhanced prompts are internal (sent only to Stitch): only the outline is returned.
+  res.json({ plan: { appName: plan.appName, category: plan.category, isFullApp: plan.isFullApp, screens: plan.screens.map((x) => ({ name: x.name })) }, cost: credits.costOf('generate_flash', plan.screens.length) });
 }));
 
 generateRouter.post('/projects/:id/edit', generationLimiter, validate(z.object({
@@ -98,7 +107,7 @@ generateRouter.post('/projects/:id/edit', generationLimiter, validate(z.object({
   const uid = req.user!.uid;
   const project = await loadProject(req.params.id, uid, 'owner');
   const pf = await preflight(uid, 'stitch', req.body.model);
-  const deviceType = req.body.deviceType ?? project.deviceType;
+  const deviceType = project.deviceType; // automatic: the project's device
   const job = await enqueue({ ownerId: uid, projectId: project.id, type: 'edit', prompt: req.body.prompt, payload: { ...req.body, deviceType }, op: 'edit', idempotencyKey: req.body.idempotencyKey, priority: pf.priority, deviceType, model: req.body.model });
   res.status(202).json({ job });
 }));
@@ -111,7 +120,7 @@ generateRouter.post('/projects/:id/variants', generationLimiter, validate(z.obje
   const project = await loadProject(req.params.id, uid, 'owner');
   const pf = await preflight(uid, 'stitch', req.body.model);
   if (!pf.plan.features.includes('variants')) throw Errors.feature('design variations');
-  const deviceType = req.body.deviceType ?? project.deviceType;
+  const deviceType = project.deviceType; // automatic: the project's device
   const job = await enqueue({ ownerId: uid, projectId: project.id, type: 'variants', prompt: req.body.prompt, payload: { ...req.body, deviceType }, op: 'variants', idempotencyKey: req.body.idempotencyKey, priority: pf.priority, deviceType, model: req.body.model });
   res.status(202).json({ job });
 }));
@@ -127,7 +136,7 @@ generateRouter.post('/projects/:id/improve', generationLimiter, validate(z.objec
   const pf = await preflight(uid, 'stitch', req.body.model);
   if ((req.body.autoIterate || req.body.maxIterations > 1) && !pf.plan.features.includes('auto_improve')) throw Errors.feature('auto-improve mode');
   const maxIterations = Math.min(req.body.maxIterations, pf.plan.maxImproveIterations);
-  const deviceType = req.body.deviceType ?? project.deviceType;
+  const deviceType = project.deviceType; // automatic: the project's device
   const job = await enqueue({ ownerId: uid, projectId: project.id, type: 'improve', prompt: req.body.instructions ?? 'Improve design', payload: { ...req.body, maxIterations, deviceType }, op: 'improve_iteration', idempotencyKey: req.body.idempotencyKey, priority: pf.priority, deviceType, model: req.body.model });
   res.status(202).json({ job, maxIterations });
 }));
@@ -150,18 +159,16 @@ generateRouter.post('/projects/:id/logos', generationLimiter, validate(z.object(
 generateRouter.get('/jobs/:jobId', ah(async (req, res) => {
   const s = await db().collection(C.jobs).doc(req.params.jobId).get();
   if (!s.exists || s.get('ownerId') !== req.user!.uid) throw Errors.notFound('Job');
-  const { payload, ...job } = s.data()!;
-  res.json({ job });
+  res.json({ job: publicJob(s.data()!) });
 }));
 
 generateRouter.get('/projects/:id/jobs', ah(async (req, res) => {
   await loadProject(req.params.id, req.user!.uid, 'viewer');
   const s = { docs: await safeQuery(db().collection(C.jobs), { where: [['ownerId', '==', req.user!.uid], ['projectId', '==', req.params.id]], orderBy: ['createdAt', 'desc'], limit: 20 }) };
-  res.json({ jobs: s.docs.map((d) => { const { payload, ...j } = d.data(); return j; }) });
+  res.json({ jobs: s.docs.map((d) => publicJob(d.data())) });
 }));
 
 generateRouter.post('/jobs/:jobId/cancel', ah(async (req, res) => {
   const job = await cancelJob(req.params.jobId, req.user!.uid);
-  const { payload, ...rest } = (job ?? {}) as any;
-  res.json({ job: rest });
+  res.json({ job: publicJob((job ?? {}) as any) });
 }));

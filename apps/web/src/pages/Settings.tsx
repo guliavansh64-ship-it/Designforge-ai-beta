@@ -1,4 +1,3 @@
-import { STITCH_MODELS, normalizeStitchModel } from '@designforge/shared';
 import { useState } from 'react';
 import { User, Palette, Bell, Shield, Download, LogOut, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -39,7 +38,6 @@ export default function Settings() {
           <div className="grid gap-4 sm:grid-cols-3">
             <label><span className="label">Theme</span><select className="field" value={prefs?.theme ?? 'dark'} onChange={(e) => setTheme(e.target.value as Theme)}><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select></label>
             <label><span className="label">Default device</span><select className="field" value={prefs?.defaultDevice ?? 'DESKTOP'} onChange={(e) => patch({ preferences: { defaultDevice: e.target.value } })}><option value="MOBILE">Mobile</option><option value="TABLET">Tablet</option><option value="DESKTOP">Desktop</option></select></label>
-            <label><span className="label">Default model</span><select className="field" value={normalizeStitchModel(prefs?.defaultModel)} onChange={(e) => patch({ preferences: { defaultModel: e.target.value } })}>{STITCH_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.hint}</option>)}</select></label>
           </div>
         </Section>
         <Section icon={Bell} title="Notifications">

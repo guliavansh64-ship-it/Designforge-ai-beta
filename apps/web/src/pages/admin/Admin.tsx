@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import { BarChart3, Users, CreditCard, Ticket, LayoutTemplate, Settings, Megaphone, LifeBuoy, AlertOctagon, ScrollText, ArrowLeft, Package, Search, Shield } from 'lucide-react';
+import { BarChart3, Users, CreditCard, Ticket, LayoutTemplate, Settings, Megaphone, LifeBuoy, AlertOctagon, ScrollText, ArrowLeft, Package, Search, Shield, BellRing } from 'lucide-react';
 import { DEFAULT_PLANS, type PlanDefinition } from '@designforge/shared';
 import { api, newKey, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -11,7 +11,7 @@ import { Badge, BarChart, Button, Card, ErrorBox, Logo, Modal, PageHeader, Spinn
 const NAV = [
   { to: '', label: 'Overview', icon: BarChart3, end: true }, { to: 'users', label: 'Users', icon: Users }, { to: 'plans', label: 'Plans', icon: Package },
   { to: 'payments', label: 'Payments', icon: CreditCard }, { to: 'coupons', label: 'Coupons', icon: Ticket }, { to: 'templates', label: 'Templates', icon: LayoutTemplate },
-  { to: 'announcements', label: 'Announcements', icon: Megaphone }, { to: 'tickets', label: 'Support', icon: LifeBuoy }, { to: 'errors', label: 'Failed jobs', icon: AlertOctagon },
+  { to: 'announcements', label: 'Announcements', icon: Megaphone }, { to: 'push', label: 'Push notifications', icon: BellRing }, { to: 'tickets', label: 'Support', icon: LifeBuoy }, { to: 'errors', label: 'Failed jobs', icon: AlertOctagon },
   { to: 'audit', label: 'Audit log', icon: ScrollText }, { to: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -32,7 +32,7 @@ export default function Admin() {
         <Routes>
           <Route index element={<Overview />} /><Route path="users" element={<UsersPage />} /><Route path="users/:uid" element={<UserDetail />} />
           <Route path="plans" element={<Plans />} /><Route path="payments" element={<Payments />} /><Route path="coupons" element={<Coupons />} />
-          <Route path="templates" element={<TemplatesAdmin />} /><Route path="announcements" element={<Announcements />} /><Route path="tickets" element={<Tickets />} />
+          <Route path="templates" element={<TemplatesAdmin />} /><Route path="announcements" element={<Announcements />} /><Route path="push" element={<PushPage />} /><Route path="tickets" element={<Tickets />} />
           <Route path="errors" element={<Errors />} /><Route path="audit" element={<AuditLog />} /><Route path="settings" element={<SystemSettings />} />
         </Routes>
       </div></main>
@@ -241,6 +241,44 @@ function Announcements() {
         <div className="flex justify-between"><select className="field !w-40" value={f.level} onChange={(e) => setF({ ...f, level: e.target.value })}><option value="info">Info</option><option value="success">Success</option><option value="warning">Warning</option></select>
           <Button disabled={f.title.length < 3 || f.body.length < 3} onClick={() => act(() => api.post('/admin/announcements', { ...f, active: true }), 'Published', () => { reload(); setF({ title: '', body: '', level: 'info' }); })}>Publish</Button></div></Card>
       <div className="space-y-2">{data?.announcements.map((a) => <Card key={a.id} className="flex items-center gap-3 p-4"><div className="flex-1"><p className="font-medium">{a.title}</p><p className="muted text-sm">{a.body}</p></div><Toggle checked={a.active} label="Active" onChange={(v) => act(() => api.patch(`/admin/announcements/${a.id}`, { active: v }), 'Updated', reload)} /></Card>)}</div>
+    </div>
+  );
+}
+
+function PushPage() {
+  const toast = useToast();
+  const { data, reload } = useApi<{ campaigns: any[] }>('/admin/push');
+  const empty = { title: '', body: '', audience: 'all', planId: 'pro', user: '', link: 'none' };
+  const [f, setF] = useState(empty);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<ApiError | null>(null);
+  const send = async () => {
+    if (f.audience !== 'user' && !confirm(`Send this push to ${f.audience === 'all' ? 'ALL users' : `all ${f.planId} users`}?`)) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await api.post<{ users: number; devices: number; failed: number }>('/admin/push', { title: f.title, body: f.body, audience: f.audience, planId: f.audience === 'plan' ? f.planId : undefined, user: f.audience === 'user' ? f.user : undefined, link: f.link });
+      toast('success', `Sent to ${r.users} user(s) · ${r.devices} device(s) reached${r.failed ? ` · ${r.failed} failed` : ''}`);
+      setF(empty); reload();
+    } catch (e) { setErr(e as ApiError); } finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <PageHeader title="Push notifications" subtitle="Manual push to phones (+ in-app inbox). Automatic pushes — design ready, generation failed, payment success/failed, low credits, plan expiring — are sent by the server on their own." />
+      <ErrorBox error={err} className="mb-4" />
+      <Card className="mb-4 space-y-3 p-4">
+        <input className="field" placeholder="Title (e.g. New templates are live 🎉)" maxLength={120} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
+        <textarea className="field" placeholder="Message" maxLength={500} rows={3} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} />
+        <div className="grid gap-2 sm:grid-cols-3">
+          <select className="field" value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })}><option value="all">All users</option><option value="plan">Users on a plan</option><option value="user">One user</option></select>
+          {f.audience === 'plan' && <select className="field" value={f.planId} onChange={(e) => setF({ ...f, planId: e.target.value })}><option value="free">Free</option><option value="pro">Pro</option><option value="premium">Premium</option><option value="lifetime">Lifetime</option></select>}
+          {f.audience === 'user' && <input className="field" placeholder="User email or uid" value={f.user} onChange={(e) => setF({ ...f, user: e.target.value })} />}
+          <select className="field" value={f.link} onChange={(e) => setF({ ...f, link: e.target.value })}><option value="none">Tap opens: Notifications</option><option value="studio">Tap opens: Studio</option><option value="billing">Tap opens: Plans & credits</option><option value="projects">Tap opens: Projects</option></select>
+        </div>
+        <div className="flex justify-end"><Button loading={busy} icon={<BellRing className="h-4 w-4" />} disabled={f.title.trim().length < 2 || f.body.trim().length < 2 || (f.audience === 'user' && !f.user.trim())} onClick={send}>Send push</Button></div>
+      </Card>
+      <h2 className="mb-2 font-display font-semibold">Recent pushes</h2>
+      <div className="space-y-2">{data?.campaigns.map((c) => <Card key={c.id} className="flex items-center gap-3 p-4"><div className="flex-1"><p className="font-medium">{c.title}</p><p className="muted text-sm">{c.body}</p><p className="muted text-xs">{c.audience === 'plan' ? `Plan: ${c.planId}` : c.audience === 'user' ? `User: ${c.user}` : 'All users'} · {timeAgo(c.createdAt)}</p></div><Badge>{c.users} users · {c.devices} devices</Badge></Card>)}
+        {!data?.campaigns.length && <p className="muted text-sm">No pushes sent yet.</p>}</div>
     </div>
   );
 }

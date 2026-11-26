@@ -1,92 +1,50 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Sparkles, Smartphone, Tablet, Monitor, Globe, Wand2, Coins, Lock, Plus, X, Bot, Square, LayoutGrid } from 'lucide-react';
-import { CREDIT_COSTS, WEBSITE_CATEGORIES, TEMPLATE_CATEGORIES, STITCH_MODELS, normalizeStitchModel, type StitchModel, type DesignPlanSummary, type GenerationMode } from '@designforge/shared';
-import { Link } from 'react-router-dom';
-import { PlanSummary } from '../components/PlanSummary';
+import { Sparkles, Wand2, Coins, Plug, Smartphone, Monitor, Palette, Layers } from 'lucide-react';
+import { CREDIT_COSTS } from '@designforge/shared';
 import { api, newKey, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import type { Project } from '../lib/types';
-import { Button, Card, ErrorBox, PageHeader, Tabs, cx } from '../components/ui';
+import { Button, Card, ErrorBox, PageHeader } from '../components/ui';
 
+/**
+ * One prompt, one button. The server decides everything else automatically: one screen vs a full
+ * app (and how many screens), device, theme/style, Stitch model — and runs a hidden prompt
+ * enhancement (Gemini with the user's own key, else the built-in planner) that only Stitch sees.
+ */
 type Mode = 'any' | 'ui' | 'website';
-const UI_IDEAS = [
+const IDEAS = [
   'Create a fitness app',
   'Food delivery app for a cloud kitchen in Delhi',
-  'A fintech mobile app home screen with balance card, quick actions (send, request, pay bills) and recent transactions list',
-  'A habit tracker onboarding flow screen: friendly illustration area, 3 benefit bullets, primary "Get started" button',
-  'A SaaS analytics dashboard with sidebar navigation, KPI cards, revenue line chart and a recent orders table',
-  'A food delivery restaurant detail screen with hero photo, rating, menu categories tabs and add-to-cart buttons',
+  'Website for my bakery in Gurugram',
+  'Landing page for a B2B invoicing SaaS',
+  'Fintech home screen with balance card and recent transactions',
+  'Portfolio website for a product designer',
 ];
-const SITE_IDEAS = [
-  'A modern website for an Ayurvedic wellness clinic in Jaipur: calm earthy palette, services, doctor profiles, testimonials, booking CTA',
-  'A landing website for a B2B invoicing SaaS: bold hero, logo cloud, feature grid, pricing table, FAQ, final CTA',
-  'A portfolio website for a product designer: case study grid, about section with photo, process, contact form',
-];
-const STYLES = ['Clean & minimal', 'Bold & vibrant', 'Dark & premium', 'Playful & rounded', 'Corporate & trustworthy', 'Editorial & elegant', 'Glassmorphism', 'Neo-brutalist'];
+const isWebsite = (p: string) => /\b(website|web ?site|landing ?page|web ?page|homepage|portfolio site|blog site)\b/i.test(p);
 
 export default function StudioHome({ mode }: { mode: Mode }) {
   const { me } = useAuth();
   const nav = useNavigate();
   const toast = useToast();
-  const [kind, setKind] = useState<'ui' | 'website'>(mode === 'website' ? 'website' : 'ui');
-  const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [device, setDevice] = useState<'MOBILE' | 'TABLET' | 'DESKTOP'>(mode === 'website' ? 'DESKTOP' : (me?.preferences.defaultDevice as any) ?? 'MOBILE');
-  const [model, setModel] = useState<StitchModel>(normalizeStitchModel(me?.preferences.defaultModel));
-  const [category, setCategory] = useState<string>('');
-  const [style, setStyle] = useState('');
-  const [pages, setPages] = useState<string[]>(['Home', 'About', 'Services', 'Contact']);
-  const [newPage, setNewPage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
-
-  const isSite = kind === 'website';
-  const siteAllowed = me?.plan.features.includes('website_studio');
   const per = CREDIT_COSTS.generate_flash;
-  // Prompt enhancement + full-app generation
-  const [genMode, setGenMode] = useState<GenerationMode>('auto');
-  const [screens, setScreens] = useState(4);
-  const [enhanceOn, setEnhanceOn] = useState(true);
-  const [planState, setPlanState] = useState<{ plan: DesignPlanSummary; key: string } | null>(null);
-  const [enhancing, setEnhancing] = useState(false);
-  const geminiOn = !!me?.connections.find((c) => c.provider === 'gemini')?.connected;
-  const sitePages = isSite && genMode !== 'single' ? pages.slice(0, 6) : undefined;
-  const count = sitePages?.length ?? screens;
-  const planKey = JSON.stringify([prompt, kind, genMode, count, style, category, device, sitePages]);
-  const activePlan = enhanceOn && planState?.key === planKey ? planState.plan : null;
-  const costText = activePlan ? `${activePlan.screens.length * per} credits · ${activePlan.screens.length} ${activePlan.screens.length > 1 ? 'screens' : 'screen'} × ${per}`
-    : genMode === 'app' ? `${count * per} credits · ${count} screens × ${per}`
-    : genMode === 'auto' && enhanceOn ? `${per} credits per screen · up to ${count} for a full app` : `${per} credits`;
-
-  const enhance = async () => {
-    setEnhancing(true); setError(null);
-    try {
-      const r = await api.post<{ plan: DesignPlanSummary }>('/prompt/enhance', { prompt, kind, deviceType: device, style: style || undefined, category: category || undefined, mode: genMode, maxScreens: Math.max(2, count), pageNames: sitePages });
-      setPlanState({ plan: r.plan, key: planKey });
-    } catch (e) { setError(e as ApiError); } finally { setEnhancing(false); }
-  };
+  const stitchOn = !!me?.connections.find((c) => c.provider === 'stitch')?.connected;
 
   const start = async () => {
     setBusy(true); setError(null);
     let created: Project | null = null;
     try {
-      const fallbackName = activePlan?.isFullApp ? activePlan.appName : genMode !== 'single' && enhanceOn ? 'Untitled' : (prompt.trim().split(/[.,\n]/)[0].slice(0, 60) || 'Untitled design');
-      const { project } = await api.post<{ project: Project }>('/projects', { name: name.trim() || fallbackName, kind, deviceType: device });
+      const web = (mode === 'website' || isWebsite(prompt)) && !!me?.plan.features.includes('website_studio');
+      const { project } = await api.post<{ project: Project }>('/projects', { name: 'Untitled', kind: web ? 'website' : 'ui', deviceType: web ? 'DESKTOP' : 'MOBILE' });
       created = project;
-      const firstPage = project.pages[0];
-      const singleSite = isSite && (genMode === 'single' || !enhanceOn);
-      if (singleSite && pages[0] && pages[0] !== firstPage.name) await api.patch(`/projects/${project.id}/pages/${firstPage.id}`, { name: pages[0] });
-      const { job } = await api.post<{ job: { id: string } }>(`/projects/${project.id}/generate`, {
-        prompt, deviceType: device, model, pageId: firstPage.id, category: category || undefined, style: style || undefined, idempotencyKey: newKey(),
-        enhance: enhanceOn, mode: enhanceOn ? genMode : genMode === 'app' ? 'app' : 'single', maxScreens: Math.max(2, count), pageNames: sitePages, plan: activePlan ?? undefined,
-      });
-      if (singleSite && pages.length > 1) sessionStorage.setItem(`df_pending_pages_${project.id}`, JSON.stringify(pages.slice(1)));
+      const { job } = await api.post<{ job: { id: string } }>(`/projects/${project.id}/generate`, { prompt: prompt.trim(), pageId: project.pages[0].id, idempotencyKey: newKey(), auto: true });
       nav(`/studio/${project.id}?job=${job.id}`);
     } catch (e) {
-      // Generation never started: remove the empty project so it doesn't count toward the plan limit.
       if (created) api.del(`/projects/${created.id}`).catch(() => undefined);
       setError(e as ApiError);
       if ((e as ApiError).code === 'UI_PREVIEW') toast('info', (e as ApiError).message);
@@ -96,111 +54,34 @@ export default function StudioHome({ mode }: { mode: Mode }) {
   return (
     <div>
       <PageHeader eyebrow="Powered by your Google Stitch account" title={mode === 'website' ? 'Website Designer' : mode === 'ui' ? 'UI/UX Designer' : 'AI Design Studio'}
-        subtitle={isSite ? 'Describe your business and the pages you need. DesignForge structures the brief, Stitch generates the design, and you refine it in the editor.' : 'Describe the screen you want. Pick a device, a style and generate — then edit, iterate and export.'} />
-      {mode === 'any' && <Tabs className="mb-6" value={kind} onChange={(k) => { setKind(k); setDevice(k === 'website' ? 'DESKTOP' : 'MOBILE'); }} items={[{ id: 'ui', label: 'App UI', icon: <Smartphone className="h-3.5 w-3.5" /> }, { id: 'website', label: 'Website', icon: <Globe className="h-3.5 w-3.5" /> }]} />}
-
-      {isSite && !siteAllowed && <ErrorBox className="mb-6" error={Object.assign(new Error('Website Studio is available on Pro, Premium and Lifetime plans.'), { action: 'upgrade_plan' }) as any} />}
-
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <Card className="p-5 sm:p-6">
-          <label className="label" htmlFor="pname">Project name</label>
-          <input id="pname" className="field" placeholder={isSite ? 'e.g. Ember & Oak Café' : 'e.g. Pulse fintech app'} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
-
-          <div className="mt-5 flex items-center justify-between">
-            <label className="label !mb-0" htmlFor="prompt">{isSite ? 'Business brief' : 'Describe your app or screen'}</label>
-            {enhanceOn && <button onClick={enhance} disabled={prompt.trim().length < 3 || enhancing} className="inline-flex items-center gap-1 text-xs font-medium text-forge-500 hover:underline disabled:opacity-40"><Wand2 className={cx('h-3.5 w-3.5', enhancing && 'animate-spin')} />{enhancing ? 'Enhancing…' : activePlan ? 'Re-enhance' : `Enhance prompt${geminiOn ? ' with Gemini' : ''} · preview plan (free)`}</button>}
-          </div>
-          <textarea id="prompt" className="field mt-1.5 min-h-[160px] resize-y leading-relaxed" maxLength={4000} value={prompt} onChange={(e) => setPrompt(e.target.value)}
-            placeholder={isSite ? 'e.g. Website for my bakery in Gurugram — or describe the business, customers and what visitors should do' : 'e.g. Create a fitness app — or describe one screen in detail'} />
-          <div className="mt-1 flex justify-between text-[11px] muted"><span>Be specific about content, audience and primary action.</span><span>{prompt.length}/4000</span></div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {(isSite ? SITE_IDEAS : UI_IDEAS).map((i) => (
-              <button key={i} onClick={() => setPrompt(i)} className="surface-2 max-w-full truncate rounded-full px-3 py-1 text-xs muted hover:text-ink-900 dark:hover:text-white" title={i}>{i.slice(0, 48)}…</button>
-            ))}
-          </div>
-
-          {activePlan && <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mt-4"><PlanSummary plan={activePlan} /></motion.div>}
-
-          <div className="mt-6">
-            <span className="label">What to build</span>
-            <div className="grid grid-cols-3 gap-2">
-              {([['auto', 'Auto', Bot], ['single', 'One screen', Square], ['app', isSite ? 'Full website' : 'Full app', LayoutGrid]] as const).map(([m, l, I]) => (
-                <button key={m} onClick={() => setGenMode(m)} aria-pressed={genMode === m} className={cx('flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-sm font-medium transition', genMode === m ? 'border-forge-500 bg-forge-500/10 text-forge-600 dark:text-forge-200' : 'border-ink-200 muted dark:border-ink-700')}><I className="h-4 w-4" />{l}</button>
-              ))}
-            </div>
-            <p className="muted mt-2 text-xs">{genMode === 'auto' ? 'Short ideas like “create a fitness app” become a complete multi-screen app with one theme; a detailed single-screen request stays one screen.' : genMode === 'app' ? `A complete ${isSite ? 'website' : 'app'}: ${count} ${isSite ? 'pages' : 'screens'} with a shared theme, navigation and realistic content.` : 'Exactly one screen.'}</p>
-            {genMode !== 'single' && !isSite && (
-              <div className="mt-2 flex gap-1.5">{[3, 4, 5, 6].map((n) => <button key={n} onClick={() => setScreens(n)} className={cx('rounded-full border px-3 py-1 text-xs', screens === n ? 'border-forge-500 bg-forge-500/15 text-forge-600 dark:text-forge-200' : 'border-ink-200 muted dark:border-ink-700')}>{n} screens</button>)}</div>
-            )}
-            <label className="mt-4 flex cursor-pointer items-start gap-3">
-              <input type="checkbox" className="mt-1 h-4 w-4 accent-forge-500" checked={enhanceOn} onChange={(e) => setEnhanceOn(e.target.checked)} />
-              <span className="text-sm"><span className="font-medium">Enhance prompt{geminiOn ? ' with Gemini' : ''}</span>
-                <span className="muted block text-xs">{geminiOn ? 'Your own Gemini key rewrites your idea into a detailed design brief before it is sent to Stitch.' : <>Built-in enhancer is used. <Link to="/integrations" className="text-forge-500 hover:underline">Connect your Gemini key</Link> for AI-written briefs.</>}</span></span>
-            </label>
-          </div>
-
-          {isSite && (
-            <div className="mt-6">
-              <span className="label">Pages</span>
-              <div className="flex flex-wrap gap-2">
-                {pages.map((p, i) => (
-                  <span key={p + i} className="inline-flex items-center gap-1 rounded-full bg-forge-500/10 px-3 py-1 text-xs font-medium text-forge-600 dark:text-forge-300">
-                    {i === 0 && <span className="text-[10px] uppercase opacity-70">first ·</span>}{p}
-                    {pages.length > 1 && <button aria-label={`Remove ${p}`} onClick={() => setPages(pages.filter((_, j) => j !== i))}><X className="h-3 w-3" /></button>}
-                  </span>
-                ))}
-                <form onSubmit={(e) => { e.preventDefault(); if (newPage.trim() && pages.length < 12) { setPages([...pages, newPage.trim().slice(0, 40)]); setNewPage(''); } }} className="inline-flex">
-                  <input className="field !h-7 !w-32 !rounded-full !py-0 !text-xs" placeholder="Add page" value={newPage} onChange={(e) => setNewPage(e.target.value)} />
-                  <button className="ml-1 rounded-full p-1 text-forge-500" aria-label="Add page"><Plus className="h-4 w-4" /></button>
-                </form>
-              </div>
-              <p className="muted mt-2 text-[11px]">{genMode !== 'single' && enhanceOn ? `All ${Math.min(pages.length, 6)} pages are generated now with one shared theme (max 6; ${per} credits each).` : 'The first page is generated now. The others appear in the editor as one-click "generate in the same style" steps (each uses its own credits and Stitch quota).'}</p>
-            </div>
-          )}
-
-          <ErrorBox error={error} className="mt-5" />
-
-          <div className="mt-6 flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="flex items-center gap-1.5 text-xs muted"><Coins className="h-3.5 w-3.5 text-amber-500" />{costText} · refunded automatically if generation fails</p>
-            <Button size="lg" variant="ember" loading={busy} disabled={prompt.trim().length < 5 || (isSite && !siteAllowed)} onClick={start} icon={<Sparkles className="h-4 w-4" />}>{genMode === 'app' || activePlan?.isFullApp ? (isSite ? 'Generate full website' : 'Generate full app') : 'Generate design'}</Button>
-          </div>
+        subtitle="Describe your idea in one line. We plan the screens, pick the style, colours, fonts and device, and Google Stitch designs it." />
+      {me && !stitchOn && (
+        <Card className="mb-5 flex flex-col gap-3 border-amber-400/50 p-4 sm:flex-row sm:items-center">
+          <Plug className="h-5 w-5 text-amber-500" /><div className="flex-1"><p className="font-medium">Connect Google Stitch first</p><p className="muted text-sm">Designs are generated by Stitch in your own Google account.</p></div>
+          <Link to="/integrations"><Button>Connect Stitch</Button></Link>
         </Card>
-
-        <div className="space-y-4">
-          <Card className="p-5">
-            <span className="label">Device</span>
-            <div className="grid grid-cols-3 gap-2">
-              {([['MOBILE', Smartphone, 'Mobile'], ['TABLET', Tablet, 'Tablet'], ['DESKTOP', Monitor, 'Desktop']] as const).map(([d, I, l]) => (
-                <button key={d} onClick={() => setDevice(d)} className={cx('focus-ring flex flex-col items-center gap-1.5 rounded-xl border p-3 text-xs transition', device === d ? 'border-forge-500 bg-forge-500/10 text-forge-600 dark:text-forge-300' : 'border-ink-200 muted hover:border-ink-300 dark:border-ink-700')}>
-                  <I className="h-5 w-5" />{l}
-                </button>
-              ))}
-            </div>
-            <span className="label mt-5">Model</span>
-            <div className="space-y-2">
-              {STITCH_MODELS.map(({ id, label, hint }) => (
-                <button key={id} onClick={() => setModel(id)} className={cx('focus-ring flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition', model === id ? 'border-forge-500 bg-forge-500/10' : 'border-ink-200 dark:border-ink-700')}>
-                  <span><span className="font-medium">{label}</span><span className="muted block text-xs">{hint} · {CREDIT_COSTS.generate_flash} credits</span></span>
-                </button>
-              ))}
-            </div>
-            <p className="muted mt-2 text-[11px]">Models run in your Stitch account; Google's limits for your account apply.</p>
-          </Card>
-          <Card className="p-5">
-            <label className="label" htmlFor="cat">{isSite ? 'Business category' : 'App category'}</label>
-            <select id="cat" className="field" value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="">Choose (optional)</option>
-              {(isSite ? WEBSITE_CATEGORIES : TEMPLATE_CATEGORIES).map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <span className="label mt-5">Style</span>
-            <div className="flex flex-wrap gap-1.5">
-              {STYLES.map((s) => (
-                <motion.button whileTap={{ scale: 0.96 }} key={s} onClick={() => setStyle(style === s ? '' : s)} className={cx('rounded-full border px-2.5 py-1 text-xs transition', style === s ? 'border-forge-500 bg-forge-500/15 text-forge-600 dark:text-forge-200' : 'border-ink-200 muted dark:border-ink-700')}>{s}</motion.button>
-              ))}
-            </div>
-          </Card>
-        </div>
+      )}
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <Card className="p-5 sm:p-6">
+          <label className="label flex items-center gap-2" htmlFor="prompt"><Wand2 className="h-4 w-4 text-forge-500" />What do you want to build?</label>
+          <textarea id="prompt" autoFocus className="field mt-1.5 min-h-[180px] resize-y text-base leading-relaxed" maxLength={4000} value={prompt} onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && prompt.trim().length >= 5 && !busy) start(); }}
+            placeholder={'e.g. Create a fitness app\n\nA short idea becomes a complete multi-screen app. Describe one screen and you get exactly that screen.'} />
+          <div className="mt-3 flex flex-wrap gap-2">
+            {IDEAS.map((i) => <button key={i} onClick={() => setPrompt(i)} className="surface-2 rounded-full px-3 py-1 text-xs muted hover:text-ink-900 dark:hover:text-white">{i}</button>)}
+          </div>
+          <ErrorBox error={error} className="mt-4" />
+          <motion.div className="mt-5" whileTap={{ scale: 0.98 }}>
+            <Button className="w-full" size="lg" loading={busy} disabled={prompt.trim().length < 5 || (!!me && !stitchOn)} onClick={start} icon={<Sparkles className="h-4 w-4" />}>Generate design</Button>
+          </motion.div>
+          <p className="muted mt-2 flex items-center justify-center gap-1.5 text-xs"><Coins className="h-3.5 w-3.5 text-amber-500" />{per} credits per screen · a full app is 3–5 screens · refunded automatically if it fails</p>
+        </Card>
+        <Card className="space-y-4 p-5 text-sm">
+          <p className="font-display font-semibold">Chosen automatically for you</p>
+          {[[Layers, 'One screen or a full app', 'Short ideas become a complete app with shared navigation.'], [Palette, 'Style, colours & fonts', 'One cohesive theme across every screen.'], [Smartphone, 'Device', 'Apps → mobile, websites & dashboards → desktop.'], [Monitor, 'Best Stitch model', 'Falls back to the fast model automatically if needed.']].map(([I, t, d]: any) => (
+            <div key={t} className="flex gap-3"><I className="mt-0.5 h-4 w-4 shrink-0 text-forge-500" /><div><p className="font-medium">{t}</p><p className="muted text-xs">{d}</p></div></div>
+          ))}
+        </Card>
       </div>
     </div>
   );

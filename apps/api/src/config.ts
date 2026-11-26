@@ -15,6 +15,12 @@ const schema = z.object({
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  // ZetPay (UPI payment links). Server-side secret: set it on Render, never in the app.
+  ZETPAY_API_KEY: z.string().min(16).optional(),
+  ZETPAY_BASE_URL: z.string().url().default('https://zetpay-beta.vercel.app'),
+  /** Public https URL of this API (for payment return pages). Render sets RENDER_EXTERNAL_URL automatically. */
+  PUBLIC_API_URL: z.string().url().optional(),
+  RENDER_EXTERNAL_URL: z.string().url().optional(),
   MAX_CONCURRENT_JOBS: z.coerce.number().int().min(1).max(32).default(4),
   JOB_TIMEOUT_MS: z.coerce.number().int().default(300_000),
 });
@@ -47,12 +53,15 @@ export function checkProductionConfig(e: Record<string, unknown>): string[] {
   return missing;
 }
 
-export const paymentsEnabled = !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET && env.RAZORPAY_WEBHOOK_SECRET);
+export const razorpayEnabled = !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET && env.RAZORPAY_WEBHOOK_SECRET);
+export const zetpayEnabled = !!env.ZETPAY_API_KEY;
+export const paymentsEnabled = razorpayEnabled || zetpayEnabled;
+export const publicApiUrl = () => (env.PUBLIC_API_URL ?? env.RENDER_EXTERNAL_URL ?? `http://localhost:${env.PORT}`).replace(/\/$/, '');
 
 export function assertProductionConfig() {
   const missing = checkProductionConfig(env as Record<string, unknown>);
   if (missing.length) throw new Error(`Missing required production env: ${missing.join(', ')}`);
-  if (env.NODE_ENV === 'production' && !paymentsEnabled) console.warn('[config] Razorpay not configured: payments are DISABLED (503 PAYMENTS_UNAVAILABLE).');
+  if (env.NODE_ENV === 'production' && !paymentsEnabled) console.warn('[config] No payment provider configured (ZETPAY_API_KEY or Razorpay): payments are DISABLED.');
 }
 
 export const corsOrigins = env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);

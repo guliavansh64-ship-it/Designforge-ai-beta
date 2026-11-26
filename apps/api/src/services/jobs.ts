@@ -12,7 +12,8 @@ import * as credits from './credits.js';
 import { notify, track } from './notify.js';
 import { runLogoJob, type LogoJobInput } from './logos.js';
 import { safeQuery } from '../lib/safeQuery.js';
-import { enhance, stitchPromptFor, type DesignPlan, type OutputMode } from './promptEnhancer.js';
+import { enhance, enhanceEditInstruction, stitchPromptFor, type DesignPlan, type OutputMode } from './promptEnhancer.js';
+import { publicApiUrl } from '../config.js';
 
 /**
  * In-process job queue (free-tier friendly; single API instance).
@@ -24,10 +25,10 @@ import { enhance, stitchPromptFor, type DesignPlan, type OutputMode } from './pr
  * Scale-out path: replace `enqueue` with Cloud Tasks / BullMQ — runners are pure functions.
  */
 
-export interface GeneratePayload { prompt: string; deviceType: DeviceType; model: StitchModel; pageId?: string; newPageName?: string; category?: string; style?: string; enhance?: boolean; mode?: OutputMode; maxScreens?: number; plan?: DesignPlan; pageNames?: string[] }
-export interface EditPayload { prompt: string; pageId: string; deviceType: DeviceType; model: StitchModel; section?: string }
-export interface VariantsPayload { prompt: string; pageId: string; count: number; creativeRange: 'REFINE' | 'EXPLORE' | 'REIMAGINE'; deviceType: DeviceType; model: StitchModel }
-export interface ImprovePayload { pageId: string; instructions?: string; autoIterate: boolean; maxIterations: number; targetScore: number; deviceType: DeviceType; model: StitchModel; importAssetBase64?: string; importExt?: '.html' | '.png' | '.jpg' | '.jpeg' | '.webp' }
+export interface GeneratePayload { chat?: boolean; prompt: string; deviceType: DeviceType; model: StitchModel; pageId?: string; newPageName?: string; category?: string; style?: string; enhance?: boolean; mode?: OutputMode; maxScreens?: number; plan?: DesignPlan; pageNames?: string[] }
+export interface EditPayload { chat?: boolean; prompt: string; pageId: string; deviceType: DeviceType; model: StitchModel; section?: string }
+export interface VariantsPayload { chat?: boolean; prompt: string; pageId: string; count: number; creativeRange: 'REFINE' | 'EXPLORE' | 'REIMAGINE'; deviceType: DeviceType; model: StitchModel }
+export interface ImprovePayload { chat?: boolean; pageId: string; instructions?: string; autoIterate: boolean; maxIterations: number; targetScore: number; deviceType: DeviceType; model: StitchModel; importAssetBase64?: string; importExt?: '.html' | '.png' | '.jpg' | '.jpeg' | '.webp' }
 
 type Payload = GeneratePayload | EditPayload | VariantsPayload | ImprovePayload | LogoJobInput;
 
@@ -85,12 +86,27 @@ export async function cancelJob(jobId: string, uid: string) {
   return (await jobRef(jobId).get()).data();
 }
 
+/**
+ * Render's free plan sleeps after ~15 min without inbound traffic, killing in-flight Stitch calls.
+ * While jobs are running we ping our own public /health every 4 min so the instance stays awake.
+ */
+let keepAlive: ReturnType<typeof setInterval> | null = null;
+function syncKeepAlive() {
+  const busy = running > 0 || queue.length > 0;
+  if (busy && !keepAlive && env.NODE_ENV === 'production') {
+    keepAlive = setInterval(() => { fetch(`${publicApiUrl()}/health`).catch(() => undefined); }, 4 * 60_000);
+    keepAlive.unref?.();
+  } else if (!busy && keepAlive) { clearInterval(keepAlive); keepAlive = null; }
+}
+
 function pump() {
+  syncKeepAlive();
   while (running < env.MAX_CONCURRENT_JOBS && queue.length) {
     const item = queue.shift()!;
     running++;
     run(item.jobId).finally(() => { running--; setImmediate(pump); });
   }
+  syncKeepAlive();
 }
 
 async function finish(job: GenerationJob, status: 'succeeded' | 'failed' | 'cancelled', extra: Partial<GenerationJob> = {}) {
@@ -101,6 +117,26 @@ async function finish(job: GenerationJob, status: 'succeeded' | 'failed' | 'canc
     await credits.commit(job.creditTxnId).catch(() => undefined);
   }
   cancelled.delete(job.id);
+  // Jobs started from the Assistant chat answer back in the chat thread.
+  const pl = (job as GenerationJob & { payload?: { chat?: boolean; pageId?: string } }).payload;
+  if (pl?.chat) {
+    const text = status === 'succeeded'
+      ? (job.type === 'variants' ? '✅ Done — variations are saved on this page (open the project to compare them).' : job.type === 'generate' ? '✅ Done — the new page is ready in your project.' : '✅ Done — your change is applied and saved as a new version. Open the preview to see it; you can restore the old version any time.')
+      : status === 'cancelled' ? 'Cancelled. No credits were used.'
+        : `⚠️ That didn't work: ${extra.error?.message ?? 'unknown error'} Your credits were refunded — try again or rephrase.`;
+    await db().collection(C.chat).add({ ownerId: job.ownerId, projectId: job.projectId, pageId: pl.pageId ?? null, role: 'assistant', text, jobId: job.id, createdAt: Date.now() }).catch(() => undefined);
+  }
+}
+
+/** Low-credit push at most once a day. */
+async function maybeNotifyLowCredits(uid: string) {
+  const bal = await credits.getBalance(uid);
+  if (bal >= 10) return;
+  const ref = db().collection(C.users).doc(uid);
+  const last = (await ref.get()).get('lowCreditsNotifiedAt') ?? 0;
+  if (Date.now() - last < 24 * 3600_000) return;
+  await ref.set({ lowCreditsNotifiedAt: Date.now() }, { merge: true });
+  await notify(uid, 'credits_low', 'Credits running low ⚡', `You have ${bal} credits left. Top up with UPI to keep designing.`, { kind: 'billing' });
 }
 
 async function run(jobId: string) {
@@ -129,9 +165,12 @@ async function run(jobId: string) {
     await finish(job, 'succeeded', { resultVersionIds, stage: 'Completed' });
     await db().collection(C.generations).add({ ownerId: job.ownerId, projectId: job.projectId, jobId, type: job.type, status: 'succeeded', versionIds: resultVersionIds, createdAt: Date.now() });
     await track(`gen_success_${job.type}`);
-    await notify(job.ownerId, 'generation_completed', 'Design ready', `Your ${job.type} job finished.`, { projectId: job.projectId, jobId });
-    const bal = await credits.getBalance(job.ownerId);
-    if (bal < 10) await notify(job.ownerId, 'credits_low', 'Credits running low', `You have ${bal} credits left.`);
+    const pname = (await db().collection(C.projects).doc(job.projectId).get().catch(() => null))?.get('name') ?? 'your project';
+    const n = resultVersionIds.length;
+    const doneMsg = job.type === 'generate' ? (n > 1 ? `${n} screens of "${pname}" are ready. Tap to view.` : `"${pname}" is ready. Tap to view.`)
+      : job.type === 'variants' ? `${n} variations of "${pname}" are ready.` : job.type === 'logo' ? 'Your logo concepts are ready.' : `Your change to "${pname}" is applied.`;
+    await notify(job.ownerId, 'generation_completed', 'Your design is ready ✨', doneMsg, { projectId: job.projectId, jobId });
+    await maybeNotifyLowCredits(job.ownerId).catch(() => undefined);
   } catch (e) {
     if (e instanceof JobCancelled) {
       await finish(job, 'cancelled', { stage: 'Cancelled' });
@@ -142,7 +181,7 @@ async function run(jobId: string) {
     await finish(job, 'failed', { error: err, stage: 'Failed' });
     await db().collection(C.generations).add({ ownerId: job.ownerId, projectId: job.projectId, jobId, type: job.type, status: 'failed', error: err, createdAt: Date.now() });
     await track(`gen_failed_${job.type}`);
-    await notify(job.ownerId, 'generation_failed', 'Generation failed', err.message + ' Credits were refunded.', { projectId: job.projectId, jobId });
+    await notify(job.ownerId, 'generation_failed', 'Design failed', `${err.message} Credits were refunded.`, { projectId: job.projectId, jobId });
   }
 }
 
@@ -203,39 +242,22 @@ async function runGenerate(ctx: JobCtx) {
   // A project that already has designs gets ONE more screen; a fresh project may become a full app.
   const hasDesigns = project.pages.some((x) => !!x.currentVersionId);
   const addingToExisting = hasDesigns || !!p.newPageName;
-  const mode: OutputMode = addingToExisting ? 'single' : (p.mode ?? 'single');
+  const mode: OutputMode = addingToExisting ? 'single' : (p.mode ?? 'auto');
 
-  // Legacy path (old clients / enhancement switched off): rule-based enrichment, one screen.
-  if (!p.enhance && !p.plan && mode === 'single') {
-    await ctx.stage('Analyzing prompt', 4);
-    const pageId = await ensurePage(project, p.pageId, p.newPageName);
-    const pageName = project.pages.find((x) => x.id === pageId)?.name;
-    const prompt = enrichPrompt(p.prompt, project.kind, { category: p.category, pages: pageName ? [pageName] : [], style: p.style });
-    const sid = await ensureStitchProject(project, uid, ctx);
-    await ctx.checkCancelled();
-    await ctx.stage('Generating with Google Stitch (30–120s)', 20);
-    const r = await ctx.timed(stitchEngine.generate(uid, sid, prompt, p.deviceType, p.model), 'Stitch generation');
-    await ctx.checkCancelled();
-    await ctx.stage('Auditing & saving version', 85);
-    const v = await saveScreen(ctx, project, pageId, r, 'stitch_generate', p.prompt);
-    return [v.id];
-  }
-
+  // Enhancement is ALWAYS on (hidden from the user): Gemini (user's own key) or the built-in planner.
   // 1. Enhance the prompt (user's own Gemini key, else built-in planner) and plan the screens.
-  await ctx.stage('Enhancing your prompt', 3);
   const existingName = addingToExisting ? (p.pageId ? project.pages.find((x) => x.id === p.pageId)?.name : p.newPageName) : undefined;
-  const plan: DesignPlan = p.plan && !addingToExisting
-    ? { ...p.plan, isFullApp: p.plan.screens.length > 1, screens: p.plan.screens.slice(0, 6) }
-    : await ctx.timed(enhance(uid, {
+  await ctx.stage('Understanding your idea', 3);
+  const plan: DesignPlan = await ctx.timed(enhance(uid, {
     prompt: p.prompt, kind: project.kind, device: p.deviceType, style: p.style, category: p.category,
     mode, maxScreens: p.maxScreens ?? 5, pageName: existingName, pageNames: p.pageNames,
   }), 'Prompt enhancement');
   const total = plan.screens.length;
   await jobRef(ctx.job.id).update({ plan, screensTotal: total, screensDone: 0, updatedAt: Date.now() });
-  await ctx.stage(plan.enhancer === 'gemini' ? `Prompt enhanced with Gemini · ${total} ${total > 1 ? 'screens' : 'screen'} planned` : `Prompt enhanced · ${total} ${total > 1 ? 'screens' : 'screen'} planned`, 6);
+  await ctx.stage(total > 1 ? `Designing ${total} screens for ${plan.appName}` : `Designing ${plan.screens[0].name}`, 6);
 
   // Rename an untitled project after the planned app.
-  if (plan.isFullApp && /^(untitled|test|new project|my project)/i.test(project.name)) {
+  if (!addingToExisting && /^(untitled|test|new project|my project)/i.test(project.name)) {
     await db().collection(C.projects).doc(project.id).update({ name: plan.appName, nameLower: plan.appName.toLowerCase() }).catch(() => undefined);
   }
 
@@ -259,7 +281,7 @@ async function runGenerate(ctx: JobCtx) {
         ? await firstPage(project, p, plan.isFullApp && !addingToExisting ? screen.name : undefined, !addingToExisting)
         : await ensurePage(project, undefined, screen.name);
       await ctx.stage(total > 1 ? `Screen ${i + 1}/${total} · ${screen.name} · generating with Stitch` : `Generating ${screen.name} with Google Stitch (30–120s)`, Math.round(base + 2));
-      const r = await ctx.timed(stitchEngine.generate(uid, sid, stitchPromptFor(plan, i, project.kind), p.deviceType, p.model), `Stitch generation (${screen.name})`);
+      const r = await generateWithFallback(ctx, uid, sid, stitchPromptFor(plan, i, project.kind), p.deviceType, p.model, screen.name);
       await ctx.checkCancelled();
       await ctx.stage(total > 1 ? `Screen ${i + 1}/${total} · ${screen.name} · saving` : 'Auditing & saving version', Math.round(base + span * 0.85));
       const v = await saveScreen(ctx, project, pageId, r, 'stitch_generate', i === 0 ? p.prompt : `${plan.appName} · ${screen.name}`);
@@ -332,16 +354,40 @@ async function ensurePage(project: Project, pageId?: string, name?: string, reus
   return chosen;
 }
 
+/**
+ * Automatic model choice: Stitch's best model first; if Stitch times out / errors internally / keeps
+ * asking questions, retry once on the fast model with a condensed prompt so the user still gets a design.
+ */
+async function generateWithFallback(ctx: JobCtx, uid: string, sid: string, prompt: string, device: DeviceType, model: StitchModel | undefined, label: string) {
+  const primary: StitchModel = model ?? 'GEMINI_3_8_FLASH';
+  try {
+    return await ctx.timed(stitchEngine.generate(uid, sid, prompt, device, primary), `Stitch generation (${label})`);
+  } catch (e) {
+    const code = e instanceof AppError ? e.code : 'INTERNAL_ERROR';
+    const status = e instanceof AppError ? e.status : 500;
+    const retryable = ['TIMEOUT', 'STITCH_CLARIFICATION', 'STITCH_ERROR', 'STITCH_UNAVAILABLE', 'INTERNAL_ERROR', 'STITCH_EMPTY_RESULT'].includes(code) || status >= 500 || status === 422;
+    if (!retryable || e instanceof JobCancelled) throw e;
+    await ctx.checkCancelled();
+    logger.info({ code, label }, 'stitch generation failed; retrying on the fast model');
+    await ctx.stage(`Retrying ${label} with the fast model`, Math.max(ctx.job.progress ?? 10, 10));
+    const condensed = `${prompt.slice(0, 3500)}\n\nGenerate this single screen now. Do not ask questions; make sensible assumptions.`;
+    return ctx.timed(stitchEngine.generate(uid, sid, condensed, device, 'GEMINI_3_5_FLASH_LITE'), `Stitch generation (${label}, fast)`);
+  }
+}
+
 async function runEdit(ctx: JobCtx) {
   const p = ctx.job.payload as EditPayload;
   const project = await loadProject(ctx.job.projectId, ctx.job.ownerId, 'editor');
   const page = project.pages.find((x) => x.id === p.pageId);
   if (!page?.stitchScreenId) throw new AppError(409, 'NO_SCREEN', 'This page has no Stitch screen yet. Generate it first.');
   const sid = await ensureStitchProject(project, ctx.job.ownerId, ctx);
+  await ctx.stage('Understanding your request', 10);
+  // Small Gemini task (user's own key): make the short request precise. Never shown to the user.
+  const instruction = await enhanceEditInstruction(ctx.job.ownerId, p.prompt, { pageName: page.name, section: p.section });
   const prompt = p.section
-    ? `Only modify the section "${p.section}". Keep every other part of the screen identical. Change: ${p.prompt}`
-    : p.prompt;
-  await ctx.stage(p.section ? `Regenerating section "${p.section}"` : 'Applying edit with Stitch', 25);
+    ? `Only modify the section "${p.section}". Keep every other part of the screen identical. Change: ${instruction}`
+    : instruction;
+  await ctx.stage(p.section ? `Updating the ${p.section} section with Stitch (30–120s)` : 'Applying your change with Stitch (30–120s)', 25);
   const r = await ctx.timed(stitchEngine.edit(ctx.job.ownerId, sid, page.stitchScreenId, prompt, p.deviceType, p.model), 'Stitch edit');
   await ctx.checkCancelled();
   await ctx.stage('Saving version', 85);

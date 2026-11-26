@@ -52,7 +52,9 @@ chatRouter.post('/projects/:id/chat', generationLimiter, validate(z.object({
   const uid = req.user!.uid;
   const p = await loadProject(req.params.id, uid, 'owner');
   const { plan } = await getEntitlements(uid);
-  const deviceType = req.body.deviceType ?? p.deviceType;
+  // Automatic choices: the project's device and Stitch's best model (fallback handled by the runner).
+  const deviceType = p.deviceType;
+  req.body.model = 'GEMINI_3_8_FLASH';
   const page = p.pages.find((x) => x.id === req.body.pageId);
   if (!page) throw Errors.notFound('Page');
   const chat = db().collection(C.chat);
@@ -81,7 +83,7 @@ chatRouter.post('/projects/:id/chat', generationLimiter, validate(z.object({
     const newPageId = newId('pg_');
     await db().collection(C.projects).doc(p.id).update({ pages: [...p.pages, { id: newPageId, name: 'From reference' }] });
     const job = await enqueue({ ownerId: uid, projectId: p.id, type: 'improve', prompt: req.body.message, op: 'improve_iteration', idempotencyKey: req.body.idempotencyKey, priority: plan.features.includes('priority_queue'), deviceType, model: req.body.model,
-      payload: { pageId: newPageId, instructions: req.body.message, autoIterate: false, maxIterations: 1, targetScore: 90, deviceType, model: req.body.model, importAssetBase64: req.body.imageBase64, importExt: req.body.imageExt } });
+      payload: { chat: true, pageId: newPageId, instructions: req.body.message, autoIterate: false, maxIterations: 1, targetScore: 90, deviceType, model: req.body.model, importAssetBase64: req.body.imageBase64, importExt: req.body.imageExt } });
     return res.status(202).json({ job, message: await reply('Importing your reference image into your Stitch project and applying your instructions on a new page "From reference".', { jobId: job.id }) });
   }
 
@@ -89,16 +91,16 @@ chatRouter.post('/projects/:id/chat', generationLimiter, validate(z.object({
   if (c.intent === 'variants') {
     if (!plan.features.includes('variants')) throw Errors.feature('design variations');
     job = await enqueue({ ownerId: uid, projectId: p.id, type: 'variants', prompt: req.body.message, op: 'variants', idempotencyKey: req.body.idempotencyKey, priority: plan.features.includes('priority_queue'), deviceType, model: req.body.model,
-      payload: { prompt: req.body.message, pageId: page.id, count: 3, creativeRange: 'EXPLORE', deviceType, model: req.body.model } });
+      payload: { chat: true, prompt: req.body.message, pageId: page.id, count: 3, creativeRange: 'EXPLORE', deviceType, model: req.body.model } });
   } else if (c.intent === 'new_page') {
     job = await enqueue({ ownerId: uid, projectId: p.id, type: 'generate', prompt: req.body.message, op: 'generate_flash', idempotencyKey: req.body.idempotencyKey, priority: plan.features.includes('priority_queue'), deviceType, model: req.body.model,
-      payload: { prompt: `${req.body.message}. Match the visual style, colours and typography of the existing "${page.name}" page in this project.`, deviceType, model: req.body.model, newPageName: c.pageName } });
+      payload: { chat: true, pageId: page.id, prompt: `${req.body.message}. Match the visual style, colours and typography of the existing "${page.name}" page in this project.`, deviceType, model: req.body.model, newPageName: c.pageName, enhance: true, mode: 'single' } });
   } else if (c.intent === 'improve') {
     job = await enqueue({ ownerId: uid, projectId: p.id, type: 'improve', prompt: req.body.message, op: 'improve_iteration', idempotencyKey: req.body.idempotencyKey, priority: plan.features.includes('priority_queue'), deviceType, model: req.body.model,
-      payload: { pageId: page.id, instructions: req.body.message, autoIterate: false, maxIterations: 1, targetScore: 90, deviceType, model: req.body.model } });
+      payload: { chat: true, pageId: page.id, instructions: req.body.message, autoIterate: false, maxIterations: 1, targetScore: 90, deviceType, model: req.body.model } });
   } else {
     job = await enqueue({ ownerId: uid, projectId: p.id, type: 'chat', prompt: req.body.message, op: 'chat_edit', idempotencyKey: req.body.idempotencyKey, priority: plan.features.includes('priority_queue'), deviceType, model: req.body.model,
-      payload: { prompt: req.body.message, pageId: page.id, section: c.section, deviceType, model: req.body.model } });
+      payload: { chat: true, prompt: req.body.message, pageId: page.id, section: c.section, deviceType, model: req.body.model } });
   }
   const labels = { variants: 'Generating 3 variations of this page', new_page: `Creating a new "${(c as any).pageName}" page in the same style`, improve: 'Running the improvement engine on this page', edit: c.intent === 'edit' && c.section ? `Updating the ${c.section} section` : 'Applying your change to this page' } as const;
   res.status(202).json({ job, message: await reply(`${labels[c.intent as keyof typeof labels]}…`, { jobId: job.id, intent: c.intent }) });

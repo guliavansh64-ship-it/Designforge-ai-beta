@@ -7,7 +7,7 @@ import { useColors } from '../lib/theme';
 import type { Job } from '../lib/types';
 import { Button, Card, Progress, Row, T } from './ui';
 import { Animated, Pulse, popIn } from './motion';
-import { PlanCard } from './PlanCard';
+import { ScreenProgress } from './PlanCard';
 
 function JobCardImpl({ job, onDismiss }: { job: Job; onDismiss?: () => void }) {
   const c = useColors();
@@ -24,14 +24,14 @@ function JobCardImpl({ job, onDismiss }: { job: Job; onDismiss?: () => void }) {
             </Animated.View>
           </View>
           <View style={{ flex: 1 }}>
-            <T weight="600" style={{ textTransform: 'capitalize' }}>{job.type} · {job.status}</T>
+            <T weight="600">{({ generate: 'Design', edit: 'Edit', chat: 'Edit', variants: 'Variations', improve: 'Improve', logo: 'Logo' } as Record<string, string>)[job.type] ?? job.type} · {({ queued: 'waiting', running: 'in progress', succeeded: 'done', failed: 'failed', cancelled: 'cancelled' } as Record<string, string>)[job.status]}</T>
             <Animated.View key={job.stage} entering={FadeInDown.duration(220)}><T muted size={13} numberOfLines={2}>{job.stage}</T></Animated.View>
           </View>
           {!terminal && <T size={13} weight="600" style={{ color: c.primary }}>{Math.round(job.progress)}%</T>}
         </Row>
         {!terminal && <Progress value={job.progress} />}
         {!terminal && job.progress >= 20 && <Animated.View entering={FadeInDown}><T muted size={12}>Stitch usually takes 30–120 s. You can leave — we'll send a notification.</T></Animated.View>}
-        {job.plan && job.type === 'generate' && <PlanCard plan={job.plan} compact={terminal} done={job.screensDone ?? 0} active={!terminal} failed={job.status === 'failed'} />}
+        {!!job.screenNames?.length && job.type === 'generate' && job.screenNames.length > 1 && <ScreenProgress appName={job.appName} names={job.screenNames} done={job.screensDone ?? 0} active={!terminal} failed={job.status === 'failed'} />}
         {job.warnings?.map((w, i) => <T key={i} size={12} style={{ color: c.amber }}>{w}</T>)}
         {job.error && <Animated.View entering={FadeInDown}><T size={13} style={{ color: c.red }}>{job.error.message}</T></Animated.View>}
         {job.improvementHistory?.map((h, i) => (

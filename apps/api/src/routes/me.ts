@@ -18,8 +18,10 @@ meRouter.get('/me', ah(async (req, res) => {
   const snap = await ref.get();
   if (!snap.exists) {
     await ref.set({ uid: u.uid, email: u.email ?? null, displayName: u.name ?? null, photoURL: u.picture ?? null, status: 'active', createdAt: Date.now(), lastSeenAt: Date.now() });
-    const { track } = await import('../services/notify.js');
+    const { track, notify } = await import('../services/notify.js');
     await track('registrations');
+    // In-app welcome now; its push arrives once the device registers its token on first launch.
+    await notify(u.uid, 'welcome', 'Welcome to DesignForge AI 🎉', 'Connect Stitch in Integrations, then describe any app — e.g. "create a fitness app" — and we design every screen for you.').catch(() => undefined);
   } else {
     await ref.update({ lastSeenAt: Date.now(), email: u.email ?? snap.get('email') ?? null, photoURL: u.picture ?? snap.get('photoURL') ?? null });
   }
@@ -58,15 +60,24 @@ meRouter.patch('/me', validate(z.object({
   res.json({ ok: true });
 }));
 
-meRouter.post('/me/push-token', validate(z.object({ token: z.string().regex(/^ExponentPushToken\[[A-Za-z0-9_-]+\]$/) })), ah(async (req, res) => {
+// Native FCM registration token (Android) or a legacy Expo push token.
+meRouter.post('/me/push-token', validate(z.object({ token: z.string().min(20).max(4096).regex(/^[A-Za-z0-9_:\-\[\]]+$/), kind: z.enum(['fcm', 'expo']).optional() })), ah(async (req, res) => {
+  const isExpo = /^ExponentPushToken\[/.test(req.body.token);
+  const field = isExpo ? 'expoPushTokens' : 'fcmTokens';
+  const ref = db().collection(C.users).doc(req.user!.uid);
+  // A device belongs to whoever is signed in on it now: detach the token from any other account.
+  const others = await db().collection(C.users).where(field, 'array-contains', req.body.token).limit(10).get().catch(() => null);
   const { FieldValue } = await import('../lib/firebase.js');
-  await db().collection(C.users).doc(req.user!.uid).set({ expoPushTokens: FieldValue.arrayUnion(req.body.token) }, { merge: true });
+  for (const d of others?.docs ?? []) if (d.id !== req.user!.uid) await d.ref.update({ [field]: FieldValue.arrayRemove(req.body.token) }).catch(() => undefined);
+  // Keep at most 5 devices per user (newest wins).
+  const cur: string[] = ((await ref.get()).get(field) ?? []).filter((t: string) => t !== req.body.token);
+  await ref.set({ [field]: [...cur.slice(-4), req.body.token], pushUpdatedAt: Date.now() }, { merge: true });
   res.json({ ok: true });
 }));
 
 meRouter.delete('/me/push-token', validate(z.object({ token: z.string() })), ah(async (req, res) => {
   const { FieldValue } = await import('../lib/firebase.js');
-  await db().collection(C.users).doc(req.user!.uid).set({ expoPushTokens: FieldValue.arrayRemove(req.body.token) }, { merge: true });
+  await db().collection(C.users).doc(req.user!.uid).set({ expoPushTokens: FieldValue.arrayRemove(req.body.token), fcmTokens: FieldValue.arrayRemove(req.body.token) }, { merge: true });
   res.json({ ok: true });
 }));
 
@@ -86,11 +97,13 @@ meRouter.get('/me/export', ah(async (req, res) => {
   for (const col of [...OWNED, C.creditTxns, C.payments]) {
     const snap = await db().collection(col).where('ownerId', '==', uid).limit(5000).get();
     files[`${col}.json`] = JSON.stringify(snap.docs.map((d) => {
-      const { encryptedKey, ...rest } = d.data();
+      // Internal fields (enhanced prompts sent to Stitch, push tokens) are not part of the export.
+      const { encryptedKey, plan, payload, paymentUrl, ...rest } = d.data();
       return { id: d.id, ...rest };
     }), null, 2);
   }
-  files['profile.json'] = JSON.stringify((await db().collection(C.users).doc(uid).get()).data() ?? {}, null, 2);
+  const { fcmTokens, expoPushTokens, ...profile } = (await db().collection(C.users).doc(uid).get()).data() ?? {};
+  files['profile.json'] = JSON.stringify(profile, null, 2);
   const zip = await zipFiles(files, 'designforge-data-export');
   res.setHeader('content-type', 'application/zip');
   res.setHeader('content-disposition', 'attachment; filename="designforge-data-export.zip"');

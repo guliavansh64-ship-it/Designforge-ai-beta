@@ -64,7 +64,8 @@ export default function Login() {
               <T muted size={11}>Missing: {missing}</T>
             </Card>
           )}
-          <ServerUrlCard inline />
+          {/* Only shown for builds without a built-in server address (never in the release APK). */}
+          {!configured && <ServerUrlCard inline />}
           <Button title="Continue with Google" onPress={signIn} disabled={!configured} />
           {error && configured && <Card style={{ borderColor: c.red }}><T size={13} style={{ color: c.red }}>{error}</T></Card>}
           <Row style={{ alignItems: 'flex-start' }}><ShieldCheck size={16} color={c.green} /><T muted size={12} style={{ flex: 1 }}>We only request your basic Google profile. Connecting Stitch is a separate step you control. We never see your Google password.</T></Row>
