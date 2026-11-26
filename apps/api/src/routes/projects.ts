@@ -54,7 +54,14 @@ projectsRouter.get('/projects', validate(z.object({
   }
   const found = await safeQuery(db().collection(C.projects), { where, orderBy, limit: limit + 1, startAfterId: cursor });
   const snap = { docs: found, size: found.length };
-  const docs = snap.docs.slice(0, limit).map((d) => ({ id: d.id, ...d.data() }));
+  // Mark projects whose design is still being generated, so the list shows "Generating…" and the
+  // project screen can re-attach to the running job after the user navigated away.
+  const active = new Map<string, { id: string; status: string; progress: number }>();
+  try {
+    const js = await db().collection(C.jobs).where('ownerId', '==', uid).where('status', 'in', ['queued', 'running']).limit(20).get();
+    js.docs.forEach((d) => { const j = d.data(); if (j.projectId) active.set(j.projectId, { id: d.id, status: j.status, progress: j.progress ?? 0 }); });
+  } catch { /* index missing etc. — the list still works without the badge */ }
+  const docs = snap.docs.slice(0, limit).map((d) => ({ id: d.id, ...d.data(), activeJob: active.get(d.id) ?? null }));
   res.json({ projects: docs, nextCursor: snap.size > limit ? docs[docs.length - 1].id : null });
 }));
 

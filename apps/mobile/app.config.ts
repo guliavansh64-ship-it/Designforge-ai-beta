@@ -14,11 +14,12 @@ const config: ExpoConfig = {
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
   icon: './assets/icon.png',
-  splash: { image: './assets/icon.png', resizeMode: 'contain', backgroundColor: '#0a0a0f' },
+  splash: { image: './assets/splash-icon.png', resizeMode: 'contain', backgroundColor: '#0a0a0f' },
   android: {
     package: process.env.ANDROID_PACKAGE ?? 'app.designforge.ai',
     versionCode: 1,
-    adaptiveIcon: { foregroundImage: './assets/icon.png', backgroundColor: '#0a0a0f' },
+    // Circular logo inside the adaptive-icon safe zone, so it looks round on every launcher shape.
+    adaptiveIcon: { foregroundImage: './assets/adaptive-icon.png', backgroundColor: '#0a0a0f' },
     ...(googleServicesFile && { googleServicesFile }),
     permissions: ['POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE', 'WAKE_LOCK'],
     // Least privilege: strip permissions that libraries/templates add but this app never uses.

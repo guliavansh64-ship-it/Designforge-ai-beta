@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { showAlert } from '../components/Dialog';
 import { ScrollView, View } from 'react-native';
-import { Check, Coins } from 'lucide-react-native';
+import { Stack, useRouter } from 'expo-router';
+import { Check, Coins, History } from 'lucide-react-native';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useApi, timeAgo } from '../lib/hooks';
@@ -10,11 +11,12 @@ import { purchase, type Purchase } from '../lib/checkout';
 import { useColors } from '../lib/theme';
 import type { Plan } from '../lib/types';
 import { Badge, Button, Card, Chip, ErrorBox, Field, Label, Row, T } from '../components/ui';
-import { Appear, CountUp, SkeletonList } from '../components/motion';
+import { Appear, CountUp, PressScale, SkeletonList } from '../components/motion';
 
 export default function Billing() {
   const { me, refresh } = useAuth();
   const c = useColors();
+  const router = useRouter();
   const plans = useApi<{ plans: Plan[]; packs: { id: string; credits: number; priceInr: number }[]; razorpayKeyId: string | null; paymentsProvider?: 'zetpay' | 'razorpay' | null; maxAmountInr?: number | null }>('/plans');
   const summary = useApi<{ transactions: { id: string; type: string; op?: string; reason?: string; amount: number; status: string; createdAt: number }[] }>('/billing/summary');
   const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly');
@@ -59,6 +61,13 @@ export default function Billing() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
+      {/* Top-right corner: payment / transaction history. */}
+      <Stack.Screen options={{ headerRight: () => (
+        <PressScale onPress={() => router.push('/billing-history')} scaleTo={0.9} accessibilityLabel="Payment history"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 18, backgroundColor: c.primary + '22', borderWidth: 1, borderColor: c.primary + '55' }}>
+          <History size={16} color={c.primary} /><T size={13} weight="600" style={{ color: c.primary }}>History</T>
+        </PressScale>
+      ) }} />
       <Card index={0}><Row><Coins color={c.amber} size={26} /><View style={{ flex: 1 }}><CountUp value={me?.credits ?? 0} style={{ color: c.text, fontSize: 26, fontWeight: '800' }} /><T muted size={12}>DesignForge credits · {me?.plan.name} plan</T></View></Row>
         <T muted size={11} style={{ marginTop: 8 }}>Credits are separate from your Google Stitch/Gemini quota, which Google manages for your account.</T></Card>
       <ErrorBox error={err} />
@@ -87,11 +96,8 @@ export default function Billing() {
       {!zet && me?.subscription && me.plan.id !== 'free' && me.plan.id !== 'lifetime' && !me.subscription.cancelAtPeriodEnd && (
         <Button variant="ghost" title="Cancel auto-renew" onPress={() => showAlert('Cancel auto-renew?', 'You keep your plan until the end of the period, then move to Free.', [{ text: 'Keep plan', style: 'cancel' }, { text: 'Cancel auto-renew', style: 'destructive', onPress: async () => { await api.post('/billing/cancel').catch((e) => showAlert('Error', e.message)); refresh(); } }])} />
       )}
-      <Label>Recent transactions</Label>
-      <Card index={8} style={{ gap: 8 }}>{summary.data?.transactions.slice(0, 15).map((t, ti) => (
-        <Appear key={t.id} index={ti}><Row style={{ justifyContent: 'space-between' }}><View style={{ flex: 1 }}><T size={13}>{t.op ?? t.reason ?? t.type}</T><T muted size={11}>{timeAgo(t.createdAt)}{t.status === 'refunded' ? ' · refunded' : ''}</T></View><T size={13} style={{ color: t.type === 'debit' && t.status !== 'refunded' ? c.ember : c.green }}>{t.type === 'debit' ? '−' : '+'}{Math.abs(t.amount)}</T></Row></Appear>
-      ))}{!summary.data?.transactions.length && <T muted size={13}>No transactions yet.</T>}</Card>
-      <T muted size={11}>{zet ? 'Secure UPI payments via ZetPay (GPay, PhonePe, Paytm, any UPI app). Plans are prepaid for 30 days / 1 year with no auto-debit. Credits and plans are granted only after our server confirms the payment.' : 'Payments processed by Razorpay. Your plan or credits are granted only after our server verifies the payment.'}</T>
+      <Button variant="secondary" title="View payment & credit history" icon={<History size={16} color={c.text} />} onPress={() => router.push('/billing-history')} />
+      <T muted size={11}>{zet ? 'Secure UPI payments via ZetPay (GPay, PhonePe, Paytm, any UPI app). Plans are prepaid for 30 days / 1 year with no auto-debit — renew each period yourself (we’ll remind you when it expires). Credits and plans are granted only after our server confirms the payment.' : 'Payments processed by Razorpay. Your plan or credits are granted only after our server verifies the payment.'}</T>
     </ScrollView>
   );
 }

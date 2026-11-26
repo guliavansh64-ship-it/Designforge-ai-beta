@@ -9,7 +9,7 @@ import { useApi, timeAgo } from '../../lib/hooks';
 import { useColors } from '../../lib/theme';
 import type { Project } from '../../lib/types';
 import { Badge, Card, Chip, Empty, ErrorBox, Field, Row, T } from '../../components/ui';
-import { Animated, Appear, SkeletonList } from '../../components/motion';
+import { Animated, Appear, Pulse, SkeletonList } from '../../components/motion';
 
 export default function Projects() {
   const c = useColors();
@@ -19,6 +19,9 @@ export default function Projects() {
   const qs = new URLSearchParams({ limit: '40', ...(q.length > 1 && { q }), ...(scope === 'archived' && { archived: 'true' }), ...(scope === 'shared' && { shared: 'true' }) }).toString();
   const { data, loading, error, reload } = useApi<{ projects: Project[] }>(`/projects?${qs}`);
   useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  // While something is generating, refresh the list every 5 s so progress and new pages show up.
+  const generating = !!data?.projects.some((p) => p.activeJob);
+  useFocusEffect(useCallback(() => { if (!generating) return; const t = setInterval(reload, 5000); return () => clearInterval(t); }, [generating, reload]));
 
   const act = async (fn: () => Promise<unknown>, done?: string) => { try { await fn(); reload(); if (done) toast(done); } catch (e) { showAlert('Error', (e as Error).message); } };
   const menu = (p: Project) => showAlert(p.name, undefined, [
@@ -40,8 +43,8 @@ export default function Projects() {
         ListEmptyComponent={loading ? <SkeletonList rows={4} /> : <Empty icon={<FolderKanban size={32} color={c.primary} />} title="No projects" body="Create one from the Studio tab." />}
         renderItem={({ item: p, index }) => (
           <Animated.View exiting={FadeOutLeft.duration(220)}><Appear index={index}>
-            <Card onPress={() => router.push(p.kind === 'logo' ? `/logo?id=${p.id}` : `/project/${p.id}`)} accessibilityLabel={p.name}><Row>
-              <View style={{ flex: 1, gap: 4 }}><T weight="600" numberOfLines={1}>{p.name}</T><Row><Badge label={p.kind} />{p.kind !== 'logo' && !p.pages.some((pg) => pg.currentVersionId) && <Badge label="No design yet" tone="amber" />}<T muted size={12}>{p.pages.length} pages · {timeAgo(p.updatedAt)}</T></Row></View>
+            <Card onPress={() => router.push(p.kind === 'logo' ? `/logo?id=${p.id}` : `/project/${p.id}${p.activeJob ? `?job=${p.activeJob.id}` : ''}`)} accessibilityLabel={p.name}><Row>
+              <View style={{ flex: 1, gap: 4 }}><T weight="600" numberOfLines={1}>{p.name}</T><Row><Badge label={p.kind} />{p.activeJob ? <Row gap={6}><Pulse color={c.primary} size={8} /><T size={12} style={{ color: c.primary }}>Generating… {p.activeJob.progress}%</T></Row> : p.kind !== 'logo' && !p.pages.some((pg) => pg.currentVersionId) && <Badge label="No design yet" tone="amber" />}<T muted size={12}>{p.pages.length} pages · {timeAgo(p.updatedAt)}</T></Row></View>
               {scope !== 'shared' && <Pressable onPress={() => menu(p)} accessibilityLabel={`Actions for ${p.name}`} hitSlop={12}><MoreVertical size={20} color={c.muted} /></Pressable>}
             </Row></Card>
           </Appear></Animated.View>

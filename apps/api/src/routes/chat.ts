@@ -23,6 +23,42 @@ import { safeQuery } from '../lib/safeQuery.js';
  */
 export const chatRouter = Router();
 
+// ───────────── Free, read-only Assistant (mobile Assistant tab) ─────────────
+// Never edits anything and never spends credits. See services/assistant.ts.
+const askHits = new Map<string, number[]>();
+chatRouter.get('/assistant/messages', ah(async (req, res) => {
+  const uid = req.user!.uid;
+  const projectId = typeof req.query.projectId === 'string' && req.query.projectId ? req.query.projectId : 'general';
+  if (projectId !== 'general') await loadProject(projectId, uid, 'viewer');
+  const docs = await safeQuery(db().collection(C.chat), { where: [['ownerId', '==', uid], ['projectId', '==', projectId], ['mode', '==', 'ask']], orderBy: ['createdAt', 'asc'], limit: 60, limitToLast: true }).catch(() => []);
+  res.json({ messages: docs.map((d) => ({ id: d.id, ...d.data() })) });
+}));
+chatRouter.post('/assistant/ask', validate(z.object({ question: z.string().trim().min(1).max(1500), projectId: z.string().max(80).optional() })), ah(async (req, res) => {
+  const uid = req.user!.uid;
+  const now = Date.now();
+  const hits = (askHits.get(uid) ?? []).filter((t) => now - t < 60_000);
+  if (hits.length >= 20) { res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many questions in a minute — please wait a few seconds.' } }); return; }
+  askHits.set(uid, [...hits, now]);
+  const projectId = req.body.projectId || undefined;
+  const key = projectId ?? 'general';
+  const chat = db().collection(C.chat);
+  const history = await safeQuery(chat, { where: [['ownerId', '==', uid], ['projectId', '==', key], ['mode', '==', 'ask']], orderBy: ['createdAt', 'asc'], limit: 8, limitToLast: true })
+    .then((d) => d.map((x) => ({ role: String(x.get('role')), text: String(x.get('text') ?? '') }))).catch(() => []);
+  const { answer } = await import('../services/assistant.js');
+  const out = await answer(uid, req.body.question, projectId, history);
+  const q = { ownerId: uid, projectId: key, mode: 'ask', role: 'user', text: req.body.question, createdAt: now };
+  const a = { ownerId: uid, projectId: key, mode: 'ask', role: 'assistant', text: out.text, source: out.source, createdAt: Date.now() };
+  const [qr, ar] = await Promise.all([chat.add(q), chat.add(a)]);
+  res.json({ question: { id: qr.id, ...q }, answer: { id: ar.id, ...a } });
+}));
+chatRouter.delete('/assistant/messages', ah(async (req, res) => {
+  const uid = req.user!.uid;
+  const projectId = typeof req.query.projectId === 'string' && req.query.projectId ? req.query.projectId : 'general';
+  const docs = await safeQuery(db().collection(C.chat), { where: [['ownerId', '==', uid], ['projectId', '==', projectId], ['mode', '==', 'ask']], limit: 300 }).catch(() => []);
+  await Promise.all(docs.map((d) => d.ref.delete()));
+  res.json({ ok: true, deleted: docs.length });
+}));
+
 const SECTIONS = ['hero', 'header', 'navigation', 'navbar', 'footer', 'pricing', 'testimonials', 'features', 'faq', 'contact', 'sidebar', 'cta', 'gallery', 'about', 'team', 'blog'];
 
 export function classify(message: string) {
@@ -39,7 +75,7 @@ export function classify(message: string) {
 chatRouter.get('/projects/:id/chat', ah(async (req, res) => {
   const p = await loadProject(req.params.id, req.user!.uid, 'viewer');
   const s = { docs: await safeQuery(db().collection(C.chat), { where: [['projectId', '==', p.id], ['ownerId', '==', p.ownerId]], orderBy: ['createdAt', 'asc'], limit: 100, limitToLast: true }) };
-  res.json({ messages: s.docs.map((d) => ({ id: d.id, ...d.data() })) });
+  res.json({ messages: s.docs.filter((d) => d.get('mode') !== 'ask').map((d) => ({ id: d.id, ...d.data() })) });
 }));
 
 chatRouter.post('/projects/:id/chat', generationLimiter, validate(z.object({

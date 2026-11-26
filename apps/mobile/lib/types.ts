@@ -8,7 +8,7 @@ export interface Me {
   preferences: { theme: string; defaultDevice: Device; defaultModel: string; notificationPrefs?: { push?: boolean } };
 }
 export interface Page { id: string; name: string; currentVersionId?: string; stitchScreenId?: string }
-export interface Project { id: string; ownerId: string; name: string; kind: 'ui' | 'website' | 'logo' | 'improve'; archived: boolean; folder?: string; deviceType: Device; pages: Page[]; createdAt: number; updatedAt: number; access?: 'owner' | 'editor' | 'viewer' }
+export interface Project { id: string; ownerId: string; name: string; kind: 'ui' | 'website' | 'logo' | 'improve'; archived: boolean; folder?: string; deviceType: Device; pages: Page[]; createdAt: number; updatedAt: number; access?: 'owner' | 'editor' | 'viewer'; activeJob?: { id: string; status: string; progress: number } | null }
 export interface Audit { score: number; checks: { id: string; label: string; passed: boolean; severity: string; detail: string }[] }
 export interface Version { id: string; projectId: string; pageId: string; source: string; prompt?: string; html: string; imageUrl?: string; audit?: Audit; createdAt: number; logo?: { style: string; palette: string[]; assets: Record<string, string | null>; typography: { heading: string; body: string; why: string } } }
 export interface DesignPlan {

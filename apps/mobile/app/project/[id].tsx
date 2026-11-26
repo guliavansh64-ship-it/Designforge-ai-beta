@@ -12,7 +12,8 @@ import type { Job, Project, Version } from '../../lib/types';
 import { HtmlPreview } from '../../components/HtmlPreview';
 import { JobCard } from '../../components/JobCard';
 import { Badge, Button, Card, Chip, ErrorBox, Field, Label, Row, T } from '../../components/ui';
-import { Animated, Appear, CountUp, Float, PressScale, SkeletonList, Swap, popIn } from '../../components/motion';
+import { Animated, AnimatedProgress, Appear, CountUp, Float, PressScale, SkeletonList, Swap, popIn } from '../../components/motion';
+import { Logo } from '../../components/Logo';
 import { FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 /** Segmented device switch with a sliding highlight. */
@@ -68,6 +69,16 @@ export default function ProjectScreen() {
     } catch (e) { setErr(e as ApiError); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
+  // Re-attach to a generation that is still running (e.g. the user left this screen and came back
+  // from Projects), so the screen shows live progress and pages instead of looking empty.
+  useEffect(() => {
+    if (jobId) return;
+    api.get<{ jobs: Job[] }>(`/projects/${id}/jobs`).then(({ jobs }) => {
+      const active = jobs.find((j) => j.status === 'queued' || j.status === 'running');
+      if (active) setJobId(active.id);
+    }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
   useEffect(() => {
     if (!page?.currentVersionId) { setVersion(null); return; }
     api.get<{ version: Version }>(`/versions/${page.currentVersionId}`).then((r) => setVersion(r.version)).catch((e) => setErr(e));
@@ -132,7 +143,12 @@ export default function ProjectScreen() {
           </PressScale>
         </Row>
         {version ? <Animated.View key={version.id} entering={FadeInDown.springify().damping(18)}><HtmlPreview html={version.html} device={device} /></Animated.View> : (
-          <Card style={{ height: 260, alignItems: 'center', justifyContent: 'center', gap: 6 }}><Float><Sparkles color={c.primary} size={28} /></Float><T weight="600">{running ? 'Generating…' : 'This page is empty'}</T><T muted size={13}>{running ? 'Usually 30–120 seconds' : 'Describe it below to generate'}</T></Card>
+          <Card style={{ height: 280, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            {running ? <Logo size={72} /> : <Float><Sparkles color={c.primary} size={28} /></Float>}
+            <T weight="700" size={16}>{running ? (job?.screensTotal && job.screensTotal > 1 ? `Designing screen ${Math.min((job.screensDone ?? 0) + 1, job.screensTotal)} of ${job.screensTotal}…` : 'Designing your screen…') : 'This page is empty'}</T>
+            <T muted size={13} style={{ textAlign: 'center', paddingHorizontal: 16 }}>{running ? `${job?.progress ?? 0}% · usually 30–120 s per screen. You can leave — we'll notify you.` : 'Describe it below to generate'}</T>
+            {running && <View style={{ alignSelf: 'stretch', paddingHorizontal: 24 }}><AnimatedProgress value={job?.progress ?? 0} /></View>}
+          </Card>
         )}
         {job && <JobCard job={job} onDismiss={() => setJobId(null)} />}
 

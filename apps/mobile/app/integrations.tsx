@@ -12,7 +12,7 @@ import { FadeInDown } from 'react-native-reanimated';
 
 const P = {
   stitch: { name: 'Google Stitch', role: 'Generates UI screens & websites in your own Stitch account.', url: 'https://stitch.withgoogle.com/settings', steps: '1. Open stitch.withgoogle.com and sign in\n2. Settings → API keys → Create key\n3. Copy it and paste below' },
-  gemini: { name: 'Gemini (images)', role: 'Used only by Logo Studio. Stitch does not generate standalone images.', url: 'https://aistudio.google.com/app/apikey', steps: '1. Open Google AI Studio\n2. Create API key\n3. Copy it and paste below' },
+  gemini: { name: 'Gemini', role: 'Makes short ideas smarter, powers the free Assistant and Logo Studio.', url: 'https://aistudio.google.com/app/apikey', steps: '1. Open Google AI Studio\n2. Create API key\n3. Copy it and paste below' },
 } as const;
 
 export default function Integrations() {

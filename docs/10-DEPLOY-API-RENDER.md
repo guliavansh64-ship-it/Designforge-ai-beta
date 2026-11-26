@@ -166,3 +166,26 @@ Phone requirements:
 - Notifications are allowed.
 - The app is **not force-stopped**. Settings → Force stop blocks all pushes until the app is opened again; swiping it away from recents is fine.
 - On Xiaomi, Oppo, Vivo, Realme and Samsung phones: turn on Autostart and set battery to "No restrictions".
+
+## Build 2026-11-30: free Assistant, onboarding, redesign
+
+Redeploy the API, then check that `GET /health` shows `"build":"2026-11-30"`.
+
+**Server:**
+- **New routes** `GET/DELETE /api/assistant/messages` and `POST /api/assistant/ask` (free and read-only, rate-limited to 20 per minute).
+  - The assistant never starts jobs or charges credits.
+  - It uses the user's own Gemini key when it is connected. Otherwise it falls back to built-in answers from the project data: pages, colours, fonts, buttons, job status, credits and plan.
+- **`GET /api/projects`** now returns `activeJob` for projects that are still generating.
+- **`POST /api/me/push-test`** was removed (the test button was removed from the app).
+
+**App:**
+- **First-run flow:** Google sign-in → API keys (Stitch and Gemini, with step-by-step instructions) → permissions (notifications, battery, autostart) → main app.
+- **Login and Studio** were redesigned. The Studio shows only 3 short ideas. The server URL was removed from the login screen.
+- **Projects** show "Generating… x%", and opening a project re-attaches to the running job.
+- **Settings:** admin push removed; notifications are a single on/off switch.
+- **Plan expired** pop-up, shown at most once a day, with a "Renew now" button (plans don't auto-renew).
+- **Plans & credits:** a History button at the top right opens payment and credit history.
+- **New circular logo** for the app icon, adaptive icon, splash and in-app logo.
+- **Instant start:** the cached profile is shown at once and refreshed in the background.
+
+**Note on keys:** the `ENCRYPTION_KEY` on Render is different from the one used before. Keys saved under the old value show as "invalid" and must be pasted once again. The new key-setup screen asks for this automatically.

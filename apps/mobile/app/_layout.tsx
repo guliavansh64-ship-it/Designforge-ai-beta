@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { View } from 'react-native';
-import { Sparkles } from 'lucide-react-native';
-import { Animated, Float, Orbs, popIn } from '../components/motion';
+import { Animated, Orbs, popIn } from '../components/motion';
+import { Logo } from '../components/Logo';
+import { PlanExpiredModal } from '../components/PlanExpiredModal';
+import { useOnboardingStep } from '../lib/onboarding';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
@@ -21,12 +23,18 @@ function Gate() {
   const seg = useSegments();
   const router = useRouter();
   const c = useColors();
+  const step = useOnboardingStep(me?.user.uid);
+  // Flow: Google sign-in → API keys (Stitch + Gemini) → permissions → main app.
   useEffect(() => {
     if (loading) return;
-    const inLogin = seg[0] === 'login';
-    if (!me && !inLogin) router.replace('/login');
-    else if (me && inLogin) router.replace('/');
-  }, [me, loading, seg, router]);
+    const at = seg[0] as string | undefined;
+    const inLogin = at === 'login';
+    if (!me) { if (!inLogin) router.replace('/login'); return; }
+    if (!step) return;
+    if (step === 'keys' && at !== 'setup-keys') router.replace('/setup-keys');
+    else if (step === 'permissions' && at !== 'setup-permissions') router.replace('/setup-permissions');
+    else if (step === 'done' && (inLogin || at === 'setup-keys' || at === 'setup-permissions')) router.replace('/');
+  }, [me, loading, seg, router, step]);
   // Tapping a push notification deep-links into the right screen — also when the tap is what
   // launched the app from a fully CLOSED state (cold start), which the listener alone would miss.
   useEffect(() => {
@@ -50,13 +58,16 @@ function Gate() {
   if (loading) return (
     <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Loading DesignForge">
       <Orbs />
-      <Animated.View entering={popIn}><Float amplitude={8}><View style={{ width: 84, height: 84, borderRadius: 26, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' }}><Sparkles color="#fff" size={40} /></View></Float></Animated.View>
+      <Animated.View entering={popIn}><Logo size={96} /></Animated.View>
     </View>
   );
   return (
     <Stack screenOptions={{ headerStyle: { backgroundColor: c.bg }, headerTintColor: c.text, contentStyle: { backgroundColor: c.bg }, headerShadowVisible: false, animation: 'ios_from_right', animationDuration: 280, gestureEnabled: true }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: 'fade' }} />
       <Stack.Screen name="login" options={{ headerShown: false, animation: 'fade' }} />
+      <Stack.Screen name="setup-keys" options={{ headerShown: false, animation: 'slide_from_right', gestureEnabled: false }} />
+      <Stack.Screen name="setup-permissions" options={{ headerShown: false, animation: 'slide_from_right', gestureEnabled: false }} />
+      <Stack.Screen name="billing-history" options={{ title: 'Payment history' }} />
       <Stack.Screen name="project/[id]" options={{ title: 'Project' }} />
       <Stack.Screen name="preview/[id]" options={{ headerShown: false, animation: 'fade_from_bottom' }} />
       <Stack.Screen name="integrations" options={{ title: 'Integrations' }} />
@@ -65,12 +76,20 @@ function Gate() {
       <Stack.Screen name="improve" options={{ title: 'Improve a design' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications', animation: 'fade_from_bottom' }} />
       <Stack.Screen name="support" options={{ title: 'Help & support' }} />
-      <Stack.Screen name="admin-push" options={{ title: 'Send push (admin)' }} />
     </Stack>
   );
 }
 
+/** Shows the "plan expired" pop-up only inside the main app (not during sign-in / setup). */
+function ExpiryWatcher() {
+  const { me } = useAuth();
+  const seg = useSegments();
+  const step = useOnboardingStep(me?.user.uid);
+  if (!me || step !== 'done' || seg[0] === 'login' || String(seg[0]).startsWith('setup')) return null;
+  return <PlanExpiredModal />;
+}
+
 export default function Root() {
   // DialogHost sits above the navigator so animated dialogs/toasts overlay every screen.
-  return <SafeAreaProvider><AuthProvider><StatusBar style="auto" /><View style={{ flex: 1 }}><Gate /><ServerWakeBanner /><DialogHost /></View></AuthProvider></SafeAreaProvider>;
+  return <SafeAreaProvider><AuthProvider><StatusBar style="auto" /><View style={{ flex: 1 }}><Gate /><ServerWakeBanner /><ExpiryWatcher /><DialogHost /></View></AuthProvider></SafeAreaProvider>;
 }

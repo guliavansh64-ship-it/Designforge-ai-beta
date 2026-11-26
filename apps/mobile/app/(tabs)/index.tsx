@@ -7,7 +7,9 @@ import { useApi, timeAgo } from '../../lib/hooks';
 import { useColors } from '../../lib/theme';
 import type { Project } from '../../lib/types';
 import { Badge, Button, Card, Row, T } from '../../components/ui';
-import { Animated, Appear, CountUp, PressScale, Skeleton, popIn } from '../../components/motion';
+import { Animated, Appear, CountUp, Float, PressScale, Skeleton, popIn } from '../../components/motion';
+import { Logo } from '../../components/Logo';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function Dashboard() {
   const { me, refresh } = useAuth();
@@ -30,7 +32,7 @@ export default function Dashboard() {
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />}>
       <Appear><Row style={{ justifyContent: 'space-between' }}>
-        <View style={{ flex: 1 }}><T muted size={13}>Welcome back</T><T size={22} weight="700">{me?.user.displayName?.split(' ')[0] ?? 'Designer'}</T></View>
+        <Row gap={12} style={{ flex: 1 }}><Logo size={44} ring={false} /><View style={{ flex: 1 }}><T muted size={13}>Welcome back 👋</T><T size={22} weight="800">{me?.user.displayName?.split(' ')[0] ?? 'Designer'}</T></View></Row>
         <PressScale onPress={() => router.push('/notifications')} accessibilityLabel={`Notifications, ${notifs.data?.unread ?? 0} unread`} style={{ padding: 8 }} scaleTo={0.85}>
           <Bell color={c.text} size={22} />{!!notifs.data?.unread && <Animated.View entering={popIn} style={{ position: 'absolute', right: 6, top: 6, width: 10, height: 10, borderRadius: 5, backgroundColor: c.ember }} />}
         </PressScale>
@@ -53,10 +55,20 @@ export default function Dashboard() {
           </Appear>
         ))}
       </View>
-      <Card index={6} onPress={() => router.push('/billing')} accessibilityLabel="Plans and credits"><Row style={{ justifyContent: 'space-between' }}>
-        <Row><Coins color={c.amber} size={22} /><View><CountUp value={me?.credits ?? 0} style={{ color: c.text, fontSize: 22, fontWeight: '700' }} /><T muted size={12}>credits · {me?.plan.name} plan</T></View></Row>
-        <Row gap={4}><T size={13} style={{ color: c.primary }}>Plans & credits</T><ChevronRight color={c.primary} size={16} /></Row>
-      </Row></Card>
+      <Appear index={6}>
+        <PressScale onPress={() => router.push('/billing')} scaleTo={0.97} accessibilityLabel="Plans and credits">
+          <LinearGradient colors={[c.primary, '#a855f7', c.ember]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 22, padding: 18, gap: 6 }}>
+            <Row style={{ justifyContent: 'space-between' }}>
+              <T size={13} style={{ color: '#ffffffcc' }}>Your credits</T>
+              <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: '#ffffff26' }}><T size={12} weight="700" style={{ color: '#fff' }}>{me?.plan.name} plan</T></View>
+            </Row>
+            <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <Row gap={8}><Float amplitude={3}><Coins color="#fff" size={26} /></Float><CountUp value={me?.credits ?? 0} style={{ color: '#fff', fontSize: 34, fontWeight: '800' }} /></Row>
+              <Row gap={2}><T size={13} weight="700" style={{ color: '#fff' }}>Plans & credits</T><ChevronRight color="#fff" size={16} /></Row>
+            </Row>
+          </LinearGradient>
+        </PressScale>
+      </Appear>
       <Card index={7} style={{ gap: 4 }}>
         <Row style={{ justifyContent: 'space-between', marginBottom: 6 }}><T weight="600">Recent projects</T><Pressable onPress={() => router.push('/projects')}><T size={13} style={{ color: c.primary }}>All</T></Pressable></Row>
         {projects.loading && !projects.data && <View style={{ gap: 14, paddingVertical: 6 }}>{[0, 1, 2].map((i) => <View key={i} style={{ gap: 6 }}><Skeleton height={14} width="55%" /><Skeleton height={10} width="30%" /></View>)}</View>}
@@ -72,7 +84,7 @@ export default function Dashboard() {
       <Card index={8} style={{ gap: 8 }}>
         <T weight="600">Connections</T>
         {me?.connections.map((x) => (
-          <Row key={x.provider}>{x.connected ? <CheckCircle2 color={c.green} size={18} /> : <AlertTriangle color={c.amber} size={18} />}<T style={{ flex: 1 }}>{x.provider === 'stitch' ? 'Google Stitch' : 'Gemini (Logo Studio)'}</T><T muted size={12}>{x.connected ? `…${x.keyHint?.replace('…', '')}` : 'Not connected'}</T></Row>
+          <Row key={x.provider}>{x.connected ? <CheckCircle2 color={c.green} size={18} /> : <AlertTriangle color={c.amber} size={18} />}<T style={{ flex: 1 }}>{x.provider === 'stitch' ? 'Google Stitch' : 'Gemini'}</T><T muted size={12}>{x.connected ? `…${x.keyHint?.replace('…', '')}` : 'Not connected'}</T></Row>
         ))}
       </Card>
     </ScrollView>

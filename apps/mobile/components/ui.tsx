@@ -1,6 +1,7 @@
 import { forwardRef, memo, useEffect, useRef, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle, type StyleProp } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { AlertTriangle } from 'lucide-react-native';
 import { radius, useColors } from '../lib/theme';
@@ -16,7 +17,9 @@ export function Button({ title, onPress, variant = 'primary', loading, disabled,
   return (
     <PressScale accessibilityRole="button" accessibilityState={{ disabled: disabled || loading }} disabled={disabled || loading}
       onPress={() => { Haptics.selectionAsync().catch(() => undefined); onPress?.(); }}
-      style={[{ backgroundColor: bg, opacity: disabled ? 0.45 : 1, minHeight: small ? 36 : 48, paddingHorizontal: small ? 12 : 18, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: variant === 'secondary' ? 1 : 0, borderColor: c.border }, style]}>
+      style={[{ backgroundColor: variant === 'primary' ? 'transparent' : bg, overflow: 'hidden', opacity: disabled ? 0.45 : 1, minHeight: small ? 36 : 48, paddingHorizontal: small ? 12 : 18, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: variant === 'secondary' ? 1 : 0, borderColor: c.border }, style]}>
+      {/* Brand gradient (violet → ember) on primary buttons. */}
+      {variant === 'primary' && <LinearGradient pointerEvents="none" colors={[c.primary, '#a855f7', c.ember]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }} />}
       {loading
         ? <Animated.View key="l" entering={FadeIn.duration(150)}><ActivityIndicator color={fg} /></Animated.View>
         : icon ? <Animated.View key="i" entering={FadeIn.duration(150)}>{icon}</Animated.View> : null}

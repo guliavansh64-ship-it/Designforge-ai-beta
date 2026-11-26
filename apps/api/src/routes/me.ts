@@ -75,25 +75,6 @@ meRouter.post('/me/push-token', validate(z.object({ token: z.string().min(20).ma
   res.json({ ok: true });
 }));
 
-/**
- * Test push, sent 15 s later so the user can CLOSE the app first and confirm that notifications
- * arrive while it isn't running. At most one every 30 s per user.
- */
-const lastTest = new Map<string, number>();
-meRouter.post('/me/push-test', ah(async (req, res) => {
-  const uid = req.user!.uid;
-  if (Date.now() - (lastTest.get(uid) ?? 0) < 30_000) { res.json({ ok: true, queued: false, wait: true }); return; }
-  lastTest.set(uid, Date.now());
-  const snap = await db().collection(C.users).doc(uid).get();
-  const devices = (snap.get('fcmTokens') ?? []).length + (snap.get('expoPushTokens') ?? []).length;
-  if (!devices) { res.json({ ok: false, devices: 0 }); return; }
-  const { pushToUser } = await import('../services/notify.js');
-  setTimeout(() => {
-    pushToUser(uid, 'Test notification ✅', 'Push works even when DesignForge is closed. You will be notified when your designs are ready.', { type: 'test', kind: 'notifications' }, { respectPrefs: false }).catch(() => undefined);
-  }, 15_000).unref?.();
-  res.json({ ok: true, queued: true, devices, inSeconds: 15 });
-}));
-
 meRouter.delete('/me/push-token', validate(z.object({ token: z.string() })), ah(async (req, res) => {
   const { FieldValue } = await import('../lib/firebase.js');
   await db().collection(C.users).doc(req.user!.uid).set({ expoPushTokens: FieldValue.arrayRemove(req.body.token), fcmTokens: FieldValue.arrayRemove(req.body.token) }, { merge: true });
