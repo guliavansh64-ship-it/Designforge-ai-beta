@@ -67,10 +67,12 @@ export async function mapStitchError(uid: string | undefined, e: unknown): Promi
     case 'SERVICE_UNAVAILABLE':
       return new AppError(502, ERROR_CODES.STITCH_ERROR, 'Could not reach Google Stitch. Please retry.');
     case 'CLARIFICATION_REQUIRED': {
-      const q = se.clarification?.question?.trim();
+      // Only reached if Stitch keeps asking after our automatic follow-ups. Keep the message short and readable.
+      const q = stripMd(se.clarification?.question ?? '');
+      const lastQ = q.split(/\n+/).reverse().find((l) => l.includes('?')) ?? q;
       const sug = se.clarification?.suggestions?.slice(0, 3) ?? [];
       return new AppError(422, ERROR_CODES.STITCH_CLARIFICATION,
-        `Stitch needs more detail: ${q || 'please describe the screen more specifically.'}${sug.length ? ` (e.g. ${sug.join(' / ')})` : ''}`);
+        `Stitch wants more detail before designing. ${lastQ.slice(0, 280)}${sug.length ? `\nTry adding to your prompt: ${sug.join(' · ')}` : ''}\nTip: describe ONE specific screen (e.g. "fitness app home dashboard with activity rings and today's workouts").`);
     }
     default:
       return new AppError(502, ERROR_CODES.STITCH_ERROR, `Stitch error: ${se.message}`);
@@ -157,6 +159,45 @@ async function materialize(screen: ScreenLike, client: StitchToolClient): Promis
   return { screenId: screen.screenId, stitchProjectId: screen.projectId, html, image, raw: screen.data };
 }
 
+/**
+ * Stitch's agent sometimes answers with a QUESTION instead of a design (SDK: CLARIFICATION_REQUIRED),
+ * e.g. "I propose a 4-screen flow... Would you like me to proceed?". The SDK's guidance is to call again
+ * with a prompt that answers it, so we auto-answer: pick the "yes / proceed" suggestion (or the first one),
+ * include Stitch's own proposal as design direction, and ask for ONE screen now. Up to 2 follow-ups.
+ */
+export const NO_QUESTIONS =
+  'Generate exactly one screen now (the main screen). Do not ask clarifying questions or propose a plan first: make sensible assumptions for anything unspecified.';
+
+function stripMd(t: string) {
+  return t.replace(/\*\*|__|`|^#+\s*/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+export function clarificationFollowUp(original: string, question: string, suggestions: string[]): string {
+  const yes = suggestions.find((x) => /^(yes|proceed|go ahead|sure|ok)/i.test(x.trim()));
+  const answer = (yes ?? suggestions[0] ?? 'Yes, proceed with your proposal.').trim();
+  const proposal = stripMd(question).slice(0, 2500);
+  return [
+    original.trim(),
+    `You previously replied: """${proposal}"""`,
+    `My answer: ${answer}`,
+    'Use your proposal above as the design direction. If it describes several screens, generate ONLY the first/main one now.',
+    NO_QUESTIONS,
+  ].join('\n\n').slice(0, 7000);
+}
+async function withClarificationRetry<T>(prompt: string, run: (p: string) => Promise<T>, maxFollowUps = 2): Promise<T> {
+  let current = prompt;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run(current);
+    } catch (e) {
+      const se = e instanceof StitchError ? e : null;
+      if (!se || se.code !== 'CLARIFICATION_REQUIRED' || attempt >= maxFollowUps) throw e;
+      const q = se.clarification?.question ?? '';
+      logger.info({ attempt: attempt + 1 }, 'stitch asked a clarification question; auto-answering');
+      current = clarificationFollowUp(prompt, q, se.clarification?.suggestions ?? []);
+    }
+  }
+}
+
 /** SDK 0.4 options object. Model IDs are normalised so retired 0.3.x IDs from old clients never reach Stitch. */
 function opts(device: DeviceType, model: StitchModel | string | undefined) {
   return { deviceType: device, modelId: normalizeStitchModel(model) };
@@ -184,14 +225,15 @@ export const stitchEngine = {
 
   async generate(uid: string, stitchProjectId: string, prompt: string, device: DeviceType, model: StitchModel): Promise<StitchScreenResult> {
     return withUserClient(uid, async (sdk, client) => {
-      const gen = await sdk.project(stitchProjectId).generate(prompt, opts(device, model));
+      const gen = await withClarificationRetry(prompt, (p) => sdk.project(stitchProjectId).generate(p, opts(device, model)));
       return materialize(gen.first, client);
     });
   },
 
   async edit(uid: string, stitchProjectId: string, screenId: string, prompt: string, device: DeviceType, model: StitchModel): Promise<StitchScreenResult> {
     return withUserClient(uid, async (sdk, client) => {
-      const gen = await sdk.project(stitchProjectId).screen(screenId).edit(prompt, opts(device, model));
+      const gen = await withClarificationRetry(`${prompt}\n\nApply this change directly without asking questions.`,
+        (p) => sdk.project(stitchProjectId).screen(screenId).edit(p, opts(device, model)));
       return materialize(gen.first, client);
     });
   },
@@ -201,9 +243,9 @@ export const stitchEngine = {
     creativeRange: 'REFINE' | 'EXPLORE' | 'REIMAGINE', device: DeviceType, model: StitchModel,
   ): Promise<StitchScreenResult[]> {
     return withUserClient(uid, async (sdk, client) => {
-      const gen = await sdk.project(stitchProjectId).screen(screenId).variants(
-        prompt, { variantCount: Math.min(Math.max(count, 1), 5), creativeRange }, opts(device, model),
-      );
+      const gen = await withClarificationRetry(prompt, (p) => sdk.project(stitchProjectId).screen(screenId).variants(
+        p, { variantCount: Math.min(Math.max(count, 1), 5), creativeRange }, opts(device, model),
+      ));
       return Promise.all([...gen.screens].map((s) => materialize(s, client)));
     });
   },
@@ -232,4 +274,4 @@ export const stitchEngine = {
 };
 
 /** @internal exported for unit tests only. */
-export const __test = { materialize };
+export const __test = { materialize, withClarificationRetry };

@@ -84,7 +84,7 @@ Render only runs the code you last pushed. If the app shows
 2. In Render, open **designforge-api → Manual Deploy → Clear build cache & deploy**.
 3. Open `https://<your-service>.onrender.com/health`. It must show:
    ```json
-   { "ok": true, "build": "2026-11-26", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
+   { "ok": true, "build": "2026-11-26b", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
    ```
    If `build` is missing, the old code is still running.
 4. Optional: run a real end-to-end Stitch check from your PC. This uses 1 generation of *your* Stitch quota and deletes its test project afterwards:

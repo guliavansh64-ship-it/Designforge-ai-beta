@@ -253,5 +253,7 @@ export function enrichPrompt(prompt: string, kind: ProjectKind, opts: { category
   }
   if (opts.style) parts.push(`Visual style: ${opts.style}.`);
   parts.push('Use a consistent spacing scale, at most two typefaces, WCAG AA contrast, semantic HTML landmarks, and alt text on images.');
+  // Stitch's agent otherwise tends to reply with a multi-screen plan + question instead of a design.
+  parts.push('Generate exactly one screen now (the main screen). Do not ask clarifying questions or propose a plan first: make sensible assumptions for anything unspecified.');
   return parts.join('\n\n');
 }
