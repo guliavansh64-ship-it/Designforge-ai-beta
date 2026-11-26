@@ -4,7 +4,8 @@ import { Sparkles, ShieldCheck, Wand2, Download, AlertTriangle } from 'lucide-re
 import { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useAuth } from '../lib/auth';
 import { firebaseConfigured } from '../lib/firebase';
-import { API_URL } from '../lib/api';
+import { API_OVERRIDE_ALLOWED } from '../lib/api';
+import { ServerUrlCard, useApiUrl } from '../components/ServerUrlCard';
 import { useColors } from '../lib/theme';
 import { Button, Card, Row, T } from '../components/ui';
 import { Animated, Float, Orbs, popIn } from '../components/motion';
@@ -19,14 +20,15 @@ export default function Login() {
   const { signIn, error } = useAuth();
   const c = useColors();
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-  const configured = firebaseConfigured && !!API_URL && !!webClientId;
-  const missing = [!firebaseConfigured && 'Firebase config', !API_URL && 'API URL', !webClientId && 'Google web client ID'].filter(Boolean).join(', ');
+  const apiUrl = useApiUrl();
+  const configured = firebaseConfigured && !!apiUrl && !!webClientId;
+  const missing = [!firebaseConfigured && 'Firebase config', !apiUrl && 'API URL', !webClientId && 'Google web client ID'].filter(Boolean).join(', ');
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
       <Orbs />
       {/* ScrollView + flexGrow keeps the layout readable on small screens and with large font sizes. */}
-      <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 24, gap: 28, justifyContent: 'space-between' }} showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, padding: 24, gap: 28, justifyContent: 'space-between' }} showsVerticalScrollIndicator={false}>
         <View style={{ marginTop: 24, gap: 14 }}>
           <Animated.View entering={popIn.delay(80)}>
             <Float amplitude={5}>
@@ -55,13 +57,14 @@ export default function Login() {
         </View>
 
         <Animated.View entering={FadeInUp.delay(650).springify().damping(16)} style={{ gap: 12 }}>
-          {!configured && (
+          {!configured && !(API_OVERRIDE_ALLOWED && firebaseConfigured && webClientId) && (
             <Card style={{ borderColor: c.amber + '88', gap: 6 }}>
               <Row style={{ alignItems: 'flex-start' }}><AlertTriangle size={18} color={c.amber} /><T weight="700" style={{ color: c.amber, flex: 1 }}>Preview build — not connected to a server yet</T></Row>
-              <T muted size={12}>Sign-in is disabled because this APK was built without a backend address and Firebase project. Rebuild with your values (see docs/09-WHAT-I-NEED.md).</T>
+              <T muted size={12}>{API_OVERRIDE_ALLOWED ? 'Sign-in is disabled until a server URL is set. Enter your API address below.' : 'Sign-in is disabled because this APK was built without a backend address and Firebase project. Rebuild with your values (see docs/09-WHAT-I-NEED.md).'}</T>
               <T muted size={11}>Missing: {missing}</T>
             </Card>
           )}
+          <ServerUrlCard inline />
           <Button title="Continue with Google" onPress={signIn} disabled={!configured} />
           {error && configured && <Card style={{ borderColor: c.red }}><T size={13} style={{ color: c.red }}>{error}</T></Card>}
           <Row style={{ alignItems: 'flex-start' }}><ShieldCheck size={16} color={c.green} /><T muted size={12} style={{ flex: 1 }}>We only request your basic Google profile. Connecting Stitch is a separate step you control. We never see your Google password.</T></Row>

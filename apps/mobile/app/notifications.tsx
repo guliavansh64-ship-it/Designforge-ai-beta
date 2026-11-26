@@ -12,7 +12,7 @@ export default function Notifications() {
   const { data, loading, reload } = useApi<{ notifications: { id: string; title: string; body: string; read: boolean; createdAt: number }[] }>('/notifications');
   useEffect(() => { api.post('/notifications/read', {}).catch(() => undefined); }, []);
   return (
-    <Animated.FlatList itemLayoutAnimation={listLayout} data={data?.notifications ?? []} keyExtractor={(n) => n.id} contentContainerStyle={{ padding: 16, gap: 8 }}
+    <Animated.FlatList removeClippedSubviews initialNumToRender={10} maxToRenderPerBatch={8} windowSize={7} data={data?.notifications ?? []} keyExtractor={(n) => n.id} contentContainerStyle={{ padding: 16, gap: 8 }}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} tintColor={c.primary} />}
       ListEmptyComponent={loading ? <SkeletonList rows={4} /> : <Empty icon={<Bell size={32} color={c.primary} />} title="You're all caught up" />}
       renderItem={({ item: n, index }) => (

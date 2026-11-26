@@ -99,7 +99,7 @@ All are under `/projects/:id/`, are owner-only, and use the **owner's own** Stit
 
 | Path | Body | Credits |
 |---|---|---|
-| `generate` | `{ prompt, deviceType?, model: GEMINI_3_FLASH\|GEMINI_3_1_PRO, pageId?, newPageName?, category?, style?, idempotencyKey }` | 2 (Flash) / 5 (Pro) |
+| `generate` | `{ prompt, deviceType?, model: GEMINI_3_8_FLASH\|GEMINI_3_5_FLASH_LITE (retired 0.3.x IDs are accepted and mapped), pageId?, newPageName?, category?, style?, idempotencyKey }` | 2 |
 | `edit` | `{ prompt, pageId, deviceType?, model?, idempotencyKey }` | 2 |
 | `variants` | `{ prompt, pageId, count 1–5, creativeRange: REFINE\|EXPLORE\|REIMAGINE, idempotencyKey }` | 4 |
 | `improve` | `{ pageId, instructions?, autoIterate, maxIterations 1–5 (plan-capped), targetScore 50–100, importAssetBase64?, importExt?, idempotencyKey }` | 3 per iteration actually run |

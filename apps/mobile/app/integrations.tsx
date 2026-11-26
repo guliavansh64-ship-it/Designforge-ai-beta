@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Alert, Linking, ScrollView, Switch, View } from 'react-native';
+import { showAlert, toast } from '../components/Dialog';
+import { Linking, ScrollView, Switch, View } from 'react-native';
 import { CheckCircle2, AlertTriangle, ShieldCheck, ExternalLink } from 'lucide-react-native';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -25,13 +26,13 @@ export default function Integrations() {
 
   const connect = async () => {
     if (!open) return; setBusy('c'); setErr(null);
-    try { await api.post(`/connections/${open}`, { apiKey: key.trim() }); setKey(''); setOpen(null); setConsent(false); refresh(); Alert.alert('Connected', 'Key verified and stored encrypted on the server.'); }
+    try { await api.post(`/connections/${open}`, { apiKey: key.trim() }); const name = P[open].name; setKey(''); setOpen(null); setConsent(false); refresh(); toast(`${name} connected · key verified & encrypted`); }
     catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
   };
-  const disconnect = (p: 'stitch' | 'gemini') => Alert.alert(`Disconnect ${P[p].name}?`, 'The encrypted key is deleted from DesignForge immediately.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Disconnect', style: 'destructive', onPress: async () => {
-    try { const r = await api.del<{ revokeUrl: string }>(`/connections/${p}`); refresh(); Alert.alert('Disconnected', 'For full safety, also delete the key at the source.', [{ text: 'Done' }, { text: 'Revoke at source', onPress: () => Linking.openURL(r.revokeUrl) }]); } catch (e) { Alert.alert('Error', (e as Error).message); }
+  const disconnect = (p: 'stitch' | 'gemini') => showAlert(`Disconnect ${P[p].name}?`, 'The encrypted key is deleted from DesignForge immediately.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Disconnect', style: 'destructive', onPress: async () => {
+    try { const r = await api.del<{ revokeUrl: string }>(`/connections/${p}`); refresh(); showAlert('Disconnected', 'For full safety, also delete the key at the source.', [{ text: 'Done' }, { text: 'Revoke at source', onPress: () => Linking.openURL(r.revokeUrl) }]); } catch (e) { showAlert('Error', (e as Error).message); }
   } }]);
-  const verify = async (p: string) => { setBusy('v' + p); try { const r = await api.post<{ ok: boolean }>(`/connections/${p}/verify`); refresh(); Alert.alert(r.ok ? 'Verified' : 'Verification failed', r.ok ? 'Connection works.' : 'See the status for details.'); } catch (e) { Alert.alert('Error', (e as Error).message); } finally { setBusy(null); } };
+  const verify = async (p: string) => { setBusy('v' + p); try { const r = await api.post<{ ok: boolean }>(`/connections/${p}/verify`); refresh(); showAlert(r.ok ? 'Verified' : 'Verification failed', r.ok ? 'Connection works.' : 'See the status for details.'); } catch (e) { showAlert('Error', (e as Error).message); } finally { setBusy(null); } };
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">

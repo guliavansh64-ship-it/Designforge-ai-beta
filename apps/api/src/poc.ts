@@ -21,7 +21,7 @@ try {
   const project = await sdk.createProject('DesignForge POC');
   console.log('✔ Created project', project.projectId);
   console.log('… generating (30–120s)');
-  const screen = await project.generate('A modern SaaS analytics dashboard with sidebar navigation, KPI cards, a revenue chart and a recent orders table', 'DESKTOP', 'GEMINI_3_FLASH');
+  const screen = (await project.generate('A modern SaaS analytics dashboard with sidebar navigation, KPI cards, a revenue chart and a recent orders table', { deviceType: 'DESKTOP', modelId: 'GEMINI_3_8_FLASH' })).first;
   console.log('✔ Generated screen', screen.screenId);
   const htmlUrl = await screen.getHtml();
   const html = await (await fetch(htmlUrl)).text();

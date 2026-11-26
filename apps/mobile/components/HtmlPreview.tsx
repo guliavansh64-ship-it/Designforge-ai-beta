@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Linking, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useColors } from '../lib/theme';
@@ -16,7 +16,7 @@ import { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reani
 const CSP = "default-src 'none'; script-src 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src https: data: blob:; connect-src 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'";
 const WIDTH = { MOBILE: 390, TABLET: 834, DESKTOP: 1280, AGNOSTIC: 390 } as const;
 
-export function HtmlPreview({ html, device = 'MOBILE', height = 520 }: { html: string; device?: keyof typeof WIDTH; height?: number }) {
+function HtmlPreviewImpl({ html, device = 'MOBILE', height = 520 }: { html: string; device?: keyof typeof WIDTH; height?: number }) {
   const c = useColors();
   const doc = useMemo(() => {
     const head = `<meta http-equiv="Content-Security-Policy" content="${CSP}"><meta name="viewport" content="width=${WIDTH[device]}, user-scalable=yes"><script>document.addEventListener('click',function(e){var a=e.target.closest('a,button,[type=submit]');if(a){e.preventDefault();}},true);document.addEventListener('submit',function(e){e.preventDefault()},true);</script>`;
@@ -24,6 +24,8 @@ export function HtmlPreview({ html, device = 'MOBILE', height = 520 }: { html: s
     d = d.replace(/<meta[^>]+name=["']viewport["'][^>]*>/gi, '');
     return /<head[^>]*>/i.test(d) ? d.replace(/<head([^>]*)>/i, `<head$1>${head}`) : `<head>${head}</head>${d}`;
   }, [html, device]);
+  // PERF: a stable source object — a new object on every render made the WebView reload.
+  const source = useMemo(() => ({ html: doc, baseUrl: 'about:blank' }), [doc]);
   // Fade the page in once the WebView has painted; show a shimmer meanwhile.
   const [ready, setReady] = useState(false);
   const op = useSharedValue(0);
@@ -35,7 +37,7 @@ export function HtmlPreview({ html, device = 'MOBILE', height = 520 }: { html: s
       <Animated.View style={[{ flex: 1 }, fade]}>
       <WebView
         onLoadEnd={() => { setReady(true); op.value = withTiming(1, { duration: 320 }); }}
-        source={{ html: doc, baseUrl: 'about:blank' }}
+        source={source}
         originWhitelist={['about:*', 'data:*']}
         javaScriptEnabled
         domStorageEnabled={false}
@@ -60,3 +62,6 @@ export function HtmlPreview({ html, device = 'MOBILE', height = 520 }: { html: s
     </View>
   );
 }
+
+/** Memoised: parent re-renders (job polling, tab switches) never touch the WebView unless html/device change. */
+export const HtmlPreview = memo(HtmlPreviewImpl);

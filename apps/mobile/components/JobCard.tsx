@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { View } from 'react-native';
 import { CheckCircle2, XCircle, Ban } from 'lucide-react-native';
 import { FadeInDown, FadeOut } from 'react-native-reanimated';
@@ -7,12 +8,12 @@ import type { Job } from '../lib/types';
 import { Button, Card, Progress, Row, T } from './ui';
 import { Animated, Pulse, listLayout, popIn } from './motion';
 
-export function JobCard({ job, onDismiss }: { job: Job; onDismiss?: () => void }) {
+function JobCardImpl({ job, onDismiss }: { job: Job; onDismiss?: () => void }) {
   const c = useColors();
   const terminal = ['succeeded', 'failed', 'cancelled'].includes(job.status);
   const tone = job.status === 'succeeded' ? c.green : job.status === 'failed' ? c.red : job.status === 'cancelled' ? c.muted : c.primary;
   return (
-    <Animated.View entering={FadeInDown.springify().damping(16)} exiting={FadeOut.duration(180)} layout={listLayout}>
+    <Animated.View entering={FadeInDown.duration(260)} exiting={FadeOut.duration(180)}>
       <Card style={{ gap: 10, borderColor: tone + '55' }}>
         <Row>
           <View style={{ width: 32, alignItems: 'center' }}>
@@ -43,3 +44,5 @@ export function JobCard({ job, onDismiss }: { job: Job; onDismiss?: () => void }
     </Animated.View>
   );
 }
+
+export const JobCard = memo(JobCardImpl);

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { DeviceType, StitchModel } from '@designforge/shared';
+import { normalizeStitchModel } from '@designforge/shared';
 import { ERROR_CODES } from '@designforge/shared';
 import { AppError } from '../lib/errors.js';
 import { getCredential, markConnection } from './connections.js';
@@ -21,7 +22,8 @@ export interface StitchScreenResult {
   screenId: string;
   stitchProjectId: string;
   html: string;
-  imageUrl?: string;
+  /** Screenshot bytes (downloaded via download_file; Stitch URLs are not publicly fetchable). */
+  image?: { data: Buffer; mime: string };
   raw?: unknown;
 }
 
@@ -62,7 +64,14 @@ export async function mapStitchError(uid: string | undefined, e: unknown): Promi
     case 'VALIDATION_ERROR':
       return new AppError(400, ERROR_CODES.STITCH_ERROR, `Stitch rejected the request: ${se.message}`);
     case 'NETWORK_ERROR':
+    case 'SERVICE_UNAVAILABLE':
       return new AppError(502, ERROR_CODES.STITCH_ERROR, 'Could not reach Google Stitch. Please retry.');
+    case 'CLARIFICATION_REQUIRED': {
+      const q = se.clarification?.question?.trim();
+      const sug = se.clarification?.suggestions?.slice(0, 3) ?? [];
+      return new AppError(422, ERROR_CODES.STITCH_CLARIFICATION,
+        `Stitch needs more detail: ${q || 'please describe the screen more specifically.'}${sug.length ? ` (e.g. ${sug.join(' / ')})` : ''}`);
+    }
     default:
       return new AppError(502, ERROR_CODES.STITCH_ERROR, `Stitch error: ${se.message}`);
   }
@@ -91,16 +100,66 @@ function assertGoogleAssetUrl(url: string) {
   if (!ok) throw new AppError(502, ERROR_CODES.STITCH_ERROR, 'Unexpected asset host returned by Stitch');
 }
 
-async function materialize(screen: { screenId: string; projectId: string; getHtml(): Promise<string>; getImage(): Promise<string>; data: unknown }): Promise<StitchScreenResult> {
-  const htmlUrl = await screen.getHtml();
-  const html = await fetchText(htmlUrl);
-  let imageUrl: string | undefined;
-  try {
-    imageUrl = await screen.getImage();
-  } catch {
-    imageUrl = undefined; // screenshot is optional
+type ScreenLike = { screenId: string; projectId: string; getHtmlUrl(): Promise<string>; getImageUrl(): Promise<string>; data?: unknown };
+type FileRef = { name?: string; downloadUrl?: string; mimeType?: string };
+
+/**
+ * Downloads a screen file through Stitch's official `download_file` MCP tool.
+ *
+ * Stitch changed its asset URLs (Nov 2026): `htmlCode.downloadUrl` / `screenshot.downloadUrl` now
+ * require credentials and return a JSON wrapper instead of the file, so plain fetches (and the
+ * SDK's own readHtml()) fail with HTTP 401. The tool description explicitly says to use
+ * download_file instead. Output: `{ html }` for HTML files, `{ image }` (base64) for screenshots.
+ */
+async function downloadFile(client: StitchToolClient, name: string): Promise<{ html?: string; image?: string; mimeType?: string }> {
+  return (await client.callTool('download_file', { name })) as { html?: string; image?: string; mimeType?: string };
+}
+
+/** Fills in screen.data (htmlCode / screenshot refs) via get_screen when the generation output omitted them. */
+async function fileRefs(screen: ScreenLike): Promise<{ html?: FileRef; shot?: FileRef }> {
+  let d = (screen.data ?? {}) as { htmlCode?: FileRef; screenshot?: FileRef };
+  if (!d.htmlCode?.name) {
+    await screen.getHtmlUrl().catch(() => undefined); // SDK calls get_screen and merges the result into screen.data
+    d = (screen.data ?? {}) as typeof d;
   }
-  return { screenId: screen.screenId, stitchProjectId: screen.projectId, html, imageUrl, raw: screen.data };
+  return { html: d.htmlCode, shot: d.screenshot };
+}
+
+async function materialize(screen: ScreenLike, client: StitchToolClient): Promise<StitchScreenResult> {
+  const { html: htmlRef, shot } = await fileRefs(screen);
+  let html: string | undefined;
+  if (htmlRef?.name) {
+    for (let i = 0; i < 3 && !html; i++) {
+      try {
+        html = (await downloadFile(client, htmlRef.name)).html;
+      } catch (e) {
+        if (i === 2) throw e;
+        await new Promise((r) => setTimeout(r, 600 * 2 ** i));
+      }
+    }
+  }
+  if (!html && htmlRef?.downloadUrl) html = await fetchText(htmlRef.downloadUrl); // legacy signed-URL path
+  if (!html || !/<(html|body|div|!doctype)/i.test(html)) {
+    throw new AppError(502, ERROR_CODES.STITCH_ERROR, 'Stitch finished but returned no HTML for this screen. Please try again.');
+  }
+  let image: StitchScreenResult['image'];
+  if (shot?.name) {
+    try {
+      const f = await downloadFile(client, shot.name);
+      if (f.image) {
+        const data = Buffer.from(f.image, 'base64');
+        if (data.length > 0 && data.length <= 8_000_000) image = { data, mime: f.mimeType ?? shot.mimeType ?? 'image/png' };
+      }
+    } catch (e) {
+      logger.warn({ msg: (e as Error).message }, 'stitch screenshot download failed (optional)');
+    }
+  }
+  return { screenId: screen.screenId, stitchProjectId: screen.projectId, html, image, raw: screen.data };
+}
+
+/** SDK 0.4 options object. Model IDs are normalised so retired 0.3.x IDs from old clients never reach Stitch. */
+function opts(device: DeviceType, model: StitchModel | string | undefined) {
+  return { deviceType: device, modelId: normalizeStitchModel(model) };
 }
 
 export const stitchEngine = {
@@ -124,16 +183,16 @@ export const stitchEngine = {
   },
 
   async generate(uid: string, stitchProjectId: string, prompt: string, device: DeviceType, model: StitchModel): Promise<StitchScreenResult> {
-    return withUserClient(uid, async (sdk) => {
-      const screen = await sdk.project(stitchProjectId).generate(prompt, device, model);
-      return materialize(screen);
+    return withUserClient(uid, async (sdk, client) => {
+      const gen = await sdk.project(stitchProjectId).generate(prompt, opts(device, model));
+      return materialize(gen.first, client);
     });
   },
 
   async edit(uid: string, stitchProjectId: string, screenId: string, prompt: string, device: DeviceType, model: StitchModel): Promise<StitchScreenResult> {
-    return withUserClient(uid, async (sdk) => {
-      const screen = await sdk.project(stitchProjectId).screen(screenId).edit(prompt, device, model);
-      return materialize(screen);
+    return withUserClient(uid, async (sdk, client) => {
+      const gen = await sdk.project(stitchProjectId).screen(screenId).edit(prompt, opts(device, model));
+      return materialize(gen.first, client);
     });
   },
 
@@ -141,11 +200,11 @@ export const stitchEngine = {
     uid: string, stitchProjectId: string, screenId: string, prompt: string, count: number,
     creativeRange: 'REFINE' | 'EXPLORE' | 'REIMAGINE', device: DeviceType, model: StitchModel,
   ): Promise<StitchScreenResult[]> {
-    return withUserClient(uid, async (sdk) => {
-      const screens = await sdk.project(stitchProjectId).screen(screenId).variants(
-        prompt, { variantCount: Math.min(Math.max(count, 1), 5), creativeRange }, device, model,
+    return withUserClient(uid, async (sdk, client) => {
+      const gen = await sdk.project(stitchProjectId).screen(screenId).variants(
+        prompt, { variantCount: Math.min(Math.max(count, 1), 5), creativeRange }, opts(device, model),
       );
-      return Promise.all(screens.map((s) => materialize(s)));
+      return Promise.all([...gen.screens].map((s) => materialize(s, client)));
     });
   },
 
@@ -158,9 +217,9 @@ export const stitchEngine = {
     const file = path.join(dir, `upload${ext}`);
     try {
       await fs.writeFile(file, data);
-      return await withUserClient(uid, async (sdk) => {
+      return await withUserClient(uid, async (sdk, client) => {
         const screens = await sdk.project(stitchProjectId).upload(file, { title });
-        return Promise.all(screens.map((s) => materialize(s)));
+        return Promise.all(screens.map((s) => materialize(s, client)));
       });
     } finally {
       await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
@@ -171,3 +230,6 @@ export const stitchEngine = {
     return withUserClient(uid, async (sdk) => (await sdk.projects()).map((p) => ({ id: p.projectId, title: (p.data as any)?.title ?? 'Untitled' })));
   },
 };
+
+/** @internal exported for unit tests only. */
+export const __test = { materialize };

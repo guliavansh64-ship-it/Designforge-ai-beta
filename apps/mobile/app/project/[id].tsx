@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, View } from 'react-native';
+import { showAlert, toast } from '../../components/Dialog';
+import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Smartphone, Tablet, Monitor, Wand2, Shuffle, Sparkles, History, Download, ClipboardCheck, CheckCircle2, XCircle, X, Lock } from 'lucide-react-native';
 import { api, newKey, ApiError } from '../../lib/api';
@@ -74,7 +75,7 @@ export default function ProjectScreen() {
   const versions = useApi<{ versions: Version[] }>(pageId ? `/projects/${id}/versions?pageId=${pageId}&limit=30` : null, [vkey]);
   const job = useJob(jobId, async (j: Job) => {
     await Promise.all([load(), refresh()]); setVkey((k) => k + 1);
-    if (j.status === 'succeeded' && j.type === 'variants' && j.resultVersionIds?.[0]) { setTab('versions'); Alert.alert('Variations ready', 'Open them in Versions and tap “Use” on your favourite.'); }
+    if (j.status === 'succeeded' && j.type === 'variants' && j.resultVersionIds?.[0]) { setTab('versions'); showAlert('Variations ready', 'Open them in Versions and tap “Use” on your favourite.'); }
   });
   const running = job && !['succeeded', 'failed', 'cancelled'].includes(job.status);
 
@@ -84,7 +85,7 @@ export default function ProjectScreen() {
     catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
   };
   const restore = async (vid: string) => {
-    try { await api.post(`/versions/${vid}/restore`); setViewing(null); await load(); setVkey((k) => k + 1); } catch (e) { Alert.alert('Error', (e as Error).message); }
+    try { await api.post(`/versions/${vid}/restore`); setViewing(null); await load(); setVkey((k) => k + 1); toast('Version restored'); } catch (e) { showAlert('Error', (e as Error).message); }
   };
   const doExport = async (format: 'html' | 'react') => {
     setBusy(format); setErr(null);

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Sparkles, Smartphone, Tablet, Monitor, Globe, Wand2, Coins, Lock, Plus, X } from 'lucide-react';
-import { CREDIT_COSTS, WEBSITE_CATEGORIES, TEMPLATE_CATEGORIES } from '@designforge/shared';
+import { CREDIT_COSTS, WEBSITE_CATEGORIES, TEMPLATE_CATEGORIES, STITCH_MODELS, normalizeStitchModel, type StitchModel } from '@designforge/shared';
 import { api, newKey, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
@@ -31,7 +31,7 @@ export default function StudioHome({ mode }: { mode: Mode }) {
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [device, setDevice] = useState<'MOBILE' | 'TABLET' | 'DESKTOP'>(mode === 'website' ? 'DESKTOP' : (me?.preferences.defaultDevice as any) ?? 'MOBILE');
-  const [model, setModel] = useState<'GEMINI_3_FLASH' | 'GEMINI_3_1_PRO'>('GEMINI_3_FLASH');
+  const [model, setModel] = useState<StitchModel>(normalizeStitchModel(me?.preferences.defaultModel));
   const [category, setCategory] = useState<string>('');
   const [style, setStyle] = useState('');
   const [pages, setPages] = useState<string[]>(['Home', 'About', 'Services', 'Contact']);
@@ -40,9 +40,8 @@ export default function StudioHome({ mode }: { mode: Mode }) {
   const [error, setError] = useState<ApiError | null>(null);
 
   const isSite = kind === 'website';
-  const hasPro = me?.plan.features.includes('pro_model');
   const siteAllowed = me?.plan.features.includes('website_studio');
-  const cost = model === 'GEMINI_3_1_PRO' ? CREDIT_COSTS.generate_pro : CREDIT_COSTS.generate_flash;
+  const cost = CREDIT_COSTS.generate_flash;
 
   const enhance = () => {
     // Deterministic, local prompt structuring (no AI call, no credits).
@@ -137,9 +136,9 @@ export default function StudioHome({ mode }: { mode: Mode }) {
             </div>
             <span className="label mt-5">Model</span>
             <div className="space-y-2">
-              {([['GEMINI_3_FLASH', 'Gemini 3 Flash', 'Fast · 2 credits', false], ['GEMINI_3_1_PRO', 'Gemini 3.1 Pro', 'Higher fidelity · 5 credits', !hasPro]] as const).map(([id, l, d, locked]) => (
-                <button key={id} disabled={locked} onClick={() => setModel(id)} className={cx('focus-ring flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition disabled:opacity-50', model === id ? 'border-forge-500 bg-forge-500/10' : 'border-ink-200 dark:border-ink-700')}>
-                  <span><span className="font-medium">{l}</span><span className="muted block text-xs">{d}</span></span>{locked && <Lock className="h-4 w-4 muted" />}
+              {STITCH_MODELS.map(({ id, label, hint }) => (
+                <button key={id} onClick={() => setModel(id)} className={cx('focus-ring flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition', model === id ? 'border-forge-500 bg-forge-500/10' : 'border-ink-200 dark:border-ink-700')}>
+                  <span><span className="font-medium">{label}</span><span className="muted block text-xs">{hint} · {CREDIT_COSTS.generate_flash} credits</span></span>
                 </button>
               ))}
             </div>

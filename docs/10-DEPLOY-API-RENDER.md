@@ -53,3 +53,25 @@ npx firebase-tools deploy --only firestore:indexes
 cd apps/api && npm install && npm run make-admin -- you@gmail.com owner
 ```
 This needs `apps/api/.env`, which contains the service account. Download it from the workspace and don't commit it.
+
+## 7. Updating the deploy (do this after every code update)
+
+Render only runs the code you last pushed. If the app shows
+`model: Invalid enum value. Expected 'GEMINI_3_FLASH' | 'GEMINI_3_1_PRO'` or
+`Request contains an invalid argument`, your Render service is running an **old build**.
+
+1. Replace the files in your GitHub repo with the latest `designforge-ai-source.zip` contents, then commit and push.
+2. In Render, open **designforge-api → Manual Deploy → Clear build cache & deploy**.
+3. Open `https://<your-service>.onrender.com/health`. It must show:
+   ```json
+   { "ok": true, "build": "stitch-2026-11", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
+   ```
+   If `build` is missing, the old code is still running.
+4. Optional: run a real end-to-end Stitch check from your PC. This uses 1 generation of *your* Stitch quota and deletes its test project afterwards:
+   ```bash
+   cd apps/api && npm run stitch:check -- GEMINI_3_5_FLASH_LITE you@gmail.com
+   ```
+
+**What changed in Nov 2026 (Stitch API):**
+- Stitch retired the `GEMINI_3_FLASH` / `GEMINI_3_PRO` / `GEMINI_3_1_PRO` models and now accepts `GEMINI_3_8_FLASH` and `GEMINI_3_5_FLASH_LITE`.
+- Generated HTML and screenshot download URLs now need credentials. The API downloads files through Stitch's official `download_file` tool instead.

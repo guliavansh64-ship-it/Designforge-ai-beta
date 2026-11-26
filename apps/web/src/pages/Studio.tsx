@@ -1,3 +1,4 @@
+import { STITCH_MODELS, normalizeStitchModel, type StitchModel } from '@designforge/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -149,7 +150,7 @@ export default function Studio() {
   // ── AI actions
   const [aiPrompt, setAiPrompt] = useState('');
   const [section, setSection] = useState('');
-  const [model, setModel] = useState<'GEMINI_3_FLASH' | 'GEMINI_3_1_PRO'>('GEMINI_3_FLASH');
+  const [model, setModel] = useState<StitchModel>(normalizeStitchModel(me?.preferences.defaultModel));
   const [aiErr, setAiErr] = useState<ApiError | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const run = async (path: string, body: Record<string, unknown>) => {
@@ -247,7 +248,7 @@ export default function Studio() {
               </div>
               <label className="flex items-center justify-between text-xs"><span className="muted">Model</span>
                 <select className="field !w-auto !py-1.5 !text-xs" value={model} onChange={(e) => setModel(e.target.value as any)}>
-                  <option value="GEMINI_3_FLASH">Gemini 3 Flash</option><option value="GEMINI_3_1_PRO" disabled={!me?.plan.features.includes('pro_model')}>Gemini 3.1 Pro {me?.plan.features.includes('pro_model') ? '' : '(Premium)'}</option>
+                  {STITCH_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.hint}</option>)}
                 </select></label>
               <ErrorBox error={aiErr} className="!p-3 !text-xs" />
               {page?.currentVersionId ? (

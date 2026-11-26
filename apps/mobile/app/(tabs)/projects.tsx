@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, RefreshControl, View } from 'react-native';
+import { showAlert, toast } from '../../components/Dialog';
+import { Pressable, RefreshControl, View } from 'react-native';
 import { FadeOutLeft } from 'react-native-reanimated';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { FolderKanban, Search, MoreVertical } from 'lucide-react-native';
@@ -19,11 +20,11 @@ export default function Projects() {
   const { data, loading, error, reload } = useApi<{ projects: Project[] }>(`/projects?${qs}`);
   useFocusEffect(useCallback(() => { reload(); }, [reload]));
 
-  const act = async (fn: () => Promise<unknown>) => { try { await fn(); reload(); } catch (e) { Alert.alert('Error', (e as Error).message); } };
-  const menu = (p: Project) => Alert.alert(p.name, undefined, [
-    { text: 'Duplicate', onPress: () => act(() => api.post(`/projects/${p.id}/duplicate`)) },
-    { text: p.archived ? 'Restore' : 'Archive', onPress: () => act(() => api.patch(`/projects/${p.id}`, { archived: !p.archived })) },
-    { text: 'Delete', style: 'destructive', onPress: () => Alert.alert('Delete permanently?', 'All versions and chat history are deleted. Your Stitch project is not touched.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => act(() => api.del(`/projects/${p.id}`)) }]) },
+  const act = async (fn: () => Promise<unknown>, done?: string) => { try { await fn(); reload(); if (done) toast(done); } catch (e) { showAlert('Error', (e as Error).message); } };
+  const menu = (p: Project) => showAlert(p.name, undefined, [
+    { text: 'Duplicate', onPress: () => act(() => api.post(`/projects/${p.id}/duplicate`), 'Project duplicated') },
+    { text: p.archived ? 'Restore' : 'Archive', onPress: () => act(() => api.patch(`/projects/${p.id}`, { archived: !p.archived }), p.archived ? 'Project restored' : 'Project archived') },
+    { text: 'Delete', style: 'destructive', onPress: () => showAlert('Delete permanently?', 'All versions and chat history are deleted. Your Stitch project is not touched.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => act(() => api.del(`/projects/${p.id}`), 'Project deleted') }]) },
     { text: 'Close', style: 'cancel' },
   ]);
 
@@ -34,7 +35,7 @@ export default function Projects() {
         <Row><Chip label="Mine" active={scope === 'mine'} onPress={() => setScope('mine')} /><Chip label="Shared" active={scope === 'shared'} onPress={() => setScope('shared')} /><Chip label="Archived" active={scope === 'archived'} onPress={() => setScope('archived')} /></Row>
         <ErrorBox error={error} />
       </View>
-      <Animated.FlatList data={data?.projects ?? []} keyExtractor={(p) => p.id} contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 10 }}
+      <Animated.FlatList removeClippedSubviews initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} data={data?.projects ?? []} keyExtractor={(p) => p.id} contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 10 }}
         itemLayoutAnimation={listLayout}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} tintColor={c.primary} />}
         ListEmptyComponent={loading ? <SkeletonList rows={4} /> : <Empty icon={<FolderKanban size={32} color={c.primary} />} title="No projects" body="Create one from the Studio tab." />}

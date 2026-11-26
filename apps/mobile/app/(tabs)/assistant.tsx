@@ -44,7 +44,7 @@ export default function Assistant() {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ padding: 12, gap: 6 }}>
         {usable.map((p) => <Chip key={p.id} label={p.name} active={p.id === project?.id} onPress={() => setPid(p.id)} />)}
       </ScrollView>
-      <Animated.FlatList ref={list} data={chat.data?.messages ?? []} keyExtractor={(m: Msg) => m.id} contentContainerStyle={{ padding: 12, gap: 10 }}
+      <Animated.FlatList ref={list} initialNumToRender={12} maxToRenderPerBatch={10} windowSize={9} data={chat.data?.messages ?? []} keyExtractor={(m: Msg) => m.id} contentContainerStyle={{ padding: 12, gap: 10 }}
         itemLayoutAnimation={listLayout}
         ListFooterComponent={busy || (job && !['succeeded', 'failed', 'cancelled'].includes(job.status)) ? <Animated.View entering={FadeIn} style={{ alignSelf: 'flex-start', backgroundColor: c.card, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 }}><TypingDots color={c.primary} /></Animated.View> : null}
         ListEmptyComponent={<T muted size={13}>Ask for changes in plain language. Each edit becomes a new version you can restore.</T>}

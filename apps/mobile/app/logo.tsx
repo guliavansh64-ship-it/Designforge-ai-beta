@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Image, ScrollView, View } from 'react-native';
+import { showAlert } from '../components/Dialog';
+import { Image, ScrollView, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { PenTool, Download, Info } from 'lucide-react-native';
 import { api, assetUrl, newKey, ApiError } from '../lib/api';
@@ -76,7 +77,7 @@ export default function Logo() {
             <Row>{active.logo.palette.map((col, i) => <Animated.View key={col} entering={popIn.delay(i * 60)} style={{ alignItems: 'center', gap: 2 }}><View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: col }} /><T size={10} muted>{col}</T></Animated.View>)}</Row>
             <T size={13}><T weight="700" size={13}>{active.logo.typography.heading}</T> + {active.logo.typography.body}</T>
             <T muted size={12}>{active.logo.typography.why}</T>
-            <Button title="Download brand kit" icon={<Download color="#fff" size={18} />} onPress={() => api.downloadAndShare('GET', `/versions/${active.id}/brand-kit`, undefined, 'brand-kit.zip').catch((e) => Alert.alert('Error', e.message))} />
+            <Button title="Download brand kit" icon={<Download color="#fff" size={18} />} onPress={() => api.downloadAndShare('GET', `/versions/${active.id}/brand-kit`, undefined, 'brand-kit.zip').catch((e) => showAlert('Error', e.message))} />
           </Animated.View>)}
         </Card>
       )}

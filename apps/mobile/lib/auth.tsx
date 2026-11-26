@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { GoogleAuthProvider, onIdTokenChanged, signInWithCredential, signOut, type User } from 'firebase/auth';
 import { fbAuth, firebaseConfigured } from './firebase';
-import { api, ApiError } from './api';
+import { api, ApiError, loadApiUrlOverride } from './api';
 import { registerForPush, unregisterPush } from './push';
 import type { Me } from './types';
 
@@ -30,11 +30,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!firebaseConfigured) { setLoading(false); setError('App is not configured (Firebase env missing).'); return; }
-    return onIdTokenChanged(fbAuth(), async (u) => {
-      setUser(u);
-      if (u) { await refresh(); registerForPush().catch(() => undefined); } else setMe(null);
-      setLoading(false);
+    let unsub: (() => void) | undefined; let alive = true;
+    // Load a saved test-server URL (test builds only) BEFORE the first /me call.
+    loadApiUrlOverride().finally(() => {
+      if (!alive) return;
+      unsub = onIdTokenChanged(fbAuth(), async (u) => {
+        setUser(u);
+        if (u) { await refresh(); registerForPush().catch(() => undefined); } else setMe(null);
+        setLoading(false);
+      });
     });
+    return () => { alive = false; unsub?.(); };
   }, [refresh]);
 
   const signIn = async () => {

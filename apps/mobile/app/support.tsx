@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Alert, ScrollView } from 'react-native';
+import { toast } from '../components/Dialog';
+import { ScrollView } from 'react-native';
 import { api, ApiError } from '../lib/api';
 import { useApi, timeAgo } from '../lib/hooks';
 import { Badge, Button, Card, Chip, ErrorBox, Field, Label, Row, T } from '../components/ui';
@@ -14,7 +15,7 @@ export default function Support() {
   const tickets = useApi<{ tickets: { id: string; subject: string; status: string; updatedAt: number; messages: { from: string; text: string }[] }[] }>('/tickets');
   const [subject, setSubject] = useState(''); const [type, setType] = useState('question'); const [message, setMessage] = useState('');
   const [err, setErr] = useState<ApiError | null>(null); const [busy, setBusy] = useState(false);
-  const submit = async () => { setBusy(true); setErr(null); try { await api.post('/tickets', { subject, type, message }); setSubject(''); setMessage(''); tickets.reload(); Alert.alert('Ticket created', 'We usually reply within 1 business day.'); } catch (e) { setErr(e as ApiError); } finally { setBusy(false); } };
+  const submit = async () => { setBusy(true); setErr(null); try { await api.post('/tickets', { subject, type, message }); setSubject(''); setMessage(''); tickets.reload(); toast('Ticket created · we usually reply within 1 business day'); } catch (e) { setErr(e as ApiError); } finally { setBusy(false); } };
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
       {FAQ.map(([q, a], i) => <Card key={q} index={i} style={{ gap: 4 }}><T weight="600">{q}</T><T muted size={13}>{a}</T></Card>)}

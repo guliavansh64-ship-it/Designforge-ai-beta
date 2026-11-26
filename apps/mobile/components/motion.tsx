@@ -25,11 +25,15 @@ const MAX_STAGGER = 8;
 /** Layout transition for lists: items glide into place when others are added/removed. */
 export const listLayout = LinearTransition.springify().damping(20).stiffness(180);
 
-/** Fade + rise on mount, staggered by index. */
-export function Appear({ children, index = 0, style, delay = 0, from = 14 }: { children: ReactNode; index?: number; style?: StyleProp<ViewStyle>; delay?: number; from?: number }) {
-  const d = delay + Math.min(index, MAX_STAGGER) * 55;
+/**
+ * Fade + rise on mount, staggered by index.
+ * PERF: timing-based (not spring) and NO layout transition — layout animations on every card forced
+ * Reanimated to re-measure the whole tree on each update, which caused visible jank on Android.
+ */
+export function Appear({ children, index = 0, style, delay = 0, from = 12 }: { children: ReactNode; index?: number; style?: StyleProp<ViewStyle>; delay?: number; from?: number }) {
+  const d = delay + Math.min(index, MAX_STAGGER) * 45;
   return (
-    <Animated.View style={style} entering={FadeInDown.delay(d).springify().damping(18).stiffness(160).withInitialValues({ transform: [{ translateY: from }] })} layout={listLayout}>
+    <Animated.View style={style} entering={FadeInDown.delay(d).duration(260).easing(Easing.out(Easing.cubic)).withInitialValues({ opacity: 0, transform: [{ translateY: from }] })}>
       {children}
     </Animated.View>
   );
@@ -56,27 +60,33 @@ export function PressScale({ children, style, scaleTo = 0.96, disabled, ...rest 
   );
 }
 
-/** Animated progress bar: width springs to value; a light sheen sweeps while active. */
+/**
+ * Animated progress bar. PERF: the fill is a full-width bar slid in with translateX (GPU transform)
+ * instead of animating `width`, which forced a layout pass every frame.
+ */
 export function AnimatedProgress({ value, active = true, color }: { value: number; active?: boolean; color?: string }) {
   const c = useColors();
   const reduce = useReducedMotion();
-  const w = useSharedValue(0);
+  const v = useSharedValue(0);
   const sheen = useSharedValue(0);
-  const [trackW, setTrackW] = useState(0);
-  useEffect(() => { w.value = withSpring(Math.max(3, Math.min(100, value)), { damping: 22, stiffness: 90 }); }, [value, w]);
+  const tw = useSharedValue(0);
+  useEffect(() => { v.value = withTiming(Math.max(3, Math.min(100, value)) / 100, { duration: reduce ? 0 : 450, easing: Easing.out(Easing.cubic) }); }, [value, v, reduce]);
   useEffect(() => {
-    if (active && !reduce) sheen.value = withRepeat(withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.quad) }), -1, false);
+    if (active && !reduce) sheen.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }), -1, false);
     else { cancelAnimation(sheen); sheen.value = 0; }
+    return () => cancelAnimation(sheen);
   }, [active, reduce, sheen]);
-  const bar = useAnimatedStyle(() => ({ width: `${w.value}%` }));
-  const shine = useAnimatedStyle(() => ({ transform: [{ translateX: interpolate(sheen.value, [0, 1], [-80, trackW]) }], opacity: active ? 1 : 0 }));
+  const bar = useAnimatedStyle(() => ({ transform: [{ translateX: -(1 - v.value) * tw.value }] }));
+  const shine = useAnimatedStyle(() => ({ transform: [{ translateX: interpolate(sheen.value, [0, 1], [-80, tw.value]) }] }));
   return (
-    <View onLayout={(e) => setTrackW(e.nativeEvent.layout.width)} style={{ height: 6, backgroundColor: c.card2, borderRadius: 3, overflow: 'hidden' }}
+    <View onLayout={(e) => { tw.value = e.nativeEvent.layout.width; }} style={{ height: 6, backgroundColor: c.card2, borderRadius: 3, overflow: 'hidden' }}
       accessibilityRole="progressbar" accessibilityValue={{ now: Math.round(value), min: 0, max: 100 }}>
-      <Animated.View style={[{ height: '100%', backgroundColor: color ?? c.primary, borderRadius: 3, overflow: 'hidden' }, bar]}>
-        <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, width: 80 }, shine]}>
-          <LinearGradient colors={['transparent', 'rgba(255,255,255,0.45)', 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ flex: 1 }} />
-        </Animated.View>
+      <Animated.View style={[{ ...StyleSheetAbsolute, backgroundColor: color ?? c.primary, borderRadius: 3, overflow: 'hidden' }, bar]}>
+        {active && !reduce && (
+          <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, width: 80 }, shine]}>
+            <LinearGradient colors={['transparent', 'rgba(255,255,255,0.4)', 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ flex: 1 }} />
+          </Animated.View>
+        )}
       </Animated.View>
     </View>
   );
@@ -87,14 +97,14 @@ export function Skeleton({ height = 16, width = '100%', radius = 8, style }: { h
   const c = useColors();
   const reduce = useReducedMotion();
   const t = useSharedValue(0);
-  const [w, setW] = useState(300);
+  const w = useSharedValue(300);
   useEffect(() => {
     if (!reduce) t.value = withRepeat(withTiming(1, { duration: 1200, easing: Easing.inOut(Easing.ease) }), -1, false);
     return () => cancelAnimation(t);
   }, [reduce, t]);
-  const a = useAnimatedStyle(() => ({ transform: [{ translateX: interpolate(t.value, [0, 1], [-w, w]) }] }));
+  const a = useAnimatedStyle(() => ({ transform: [{ translateX: interpolate(t.value, [0, 1], [-w.value, w.value]) }] }));
   return (
-    <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={[{ height, width, borderRadius: radius, backgroundColor: c.card2, overflow: 'hidden' }, style]} accessibilityLabel="Loading">
+    <View onLayout={(e) => { w.value = e.nativeEvent.layout.width; }} style={[{ height, width, borderRadius: radius, backgroundColor: c.card2, overflow: 'hidden' }, style]} accessibilityLabel="Loading">
       <Animated.View style={[{ ...StyleSheetAbsolute }, a]}>
         <LinearGradient colors={['transparent', c.border + 'cc', 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ flex: 1 }} />
       </Animated.View>
@@ -153,8 +163,8 @@ function Dot({ i, color }: { i: number; color: string }) {
   return <Animated.View style={[{ width: 7, height: 7, borderRadius: 4, backgroundColor: color }, a]} />;
 }
 
-/** Number that counts to its new value (credits, scores). */
-export function CountUp({ value, style, duration = 700, format = (n: number) => n.toLocaleString('en-IN') }: { value: number; style?: StyleProp<TextStyle>; duration?: number; format?: (n: number) => string }) {
+/** Number that counts to its new value (credits, scores). JS-driven, so kept short. */
+export function CountUp({ value, style, duration = 450, format = (n: number) => n.toLocaleString('en-IN') }: { value: number; style?: StyleProp<TextStyle>; duration?: number; format?: (n: number) => string }) {
   const reduce = useReducedMotion();
   const [shown, setShown] = useState(value);
   const from = useRef(value);
@@ -202,10 +212,12 @@ function Orb({ color, size, x, y, dx, dy, duration }: { color: string; size: num
     if (!reduce) t.value = withRepeat(withTiming(1, { duration, easing: Easing.inOut(Easing.sin) }), -1, true);
     return () => cancelAnimation(t);
   }, [reduce, t, duration]);
-  const a = useAnimatedStyle(() => ({ transform: [{ translateX: x + dx * t.value }, { translateY: y + dy * t.value }, { scale: 1 + 0.08 * t.value }] }));
+  const a = useAnimatedStyle(() => ({ transform: [{ translateX: x + dx * t.value }, { translateY: y + dy * t.value }] }));
+  // PERF: alpha lives in the gradient colours (a view-level opacity forces offscreen compositing every
+  // frame on Android) and the layer is cached as a hardware texture, so drifting is a cheap GPU move.
   return (
-    <Animated.View style={[{ position: 'absolute', width: size, height: size, opacity: 0.22 }, a]}>
-      <LinearGradient colors={[color, 'transparent']} style={{ flex: 1, borderRadius: size / 2 }} start={{ x: 0.5, y: 0.5 }} end={{ x: 1, y: 1 }} />
+    <Animated.View renderToHardwareTextureAndroid style={[{ position: 'absolute', width: size, height: size }, a]}>
+      <LinearGradient colors={[color + '3a', color + '00']} style={{ flex: 1, borderRadius: size / 2 }} start={{ x: 0.5, y: 0.5 }} end={{ x: 1, y: 1 }} />
     </Animated.View>
   );
 }

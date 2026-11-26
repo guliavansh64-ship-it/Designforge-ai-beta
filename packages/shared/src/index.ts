@@ -4,7 +4,20 @@
  */
 
 export type DeviceType = 'MOBILE' | 'DESKTOP' | 'TABLET' | 'AGNOSTIC';
-export type StitchModel = 'GEMINI_3_FLASH' | 'GEMINI_3_1_PRO';
+/** Stitch model IDs currently accepted by the Stitch API (SDK 0.4.0). */
+export type StitchModel = 'GEMINI_3_8_FLASH' | 'GEMINI_3_5_FLASH_LITE';
+export const DEFAULT_STITCH_MODEL: StitchModel = 'GEMINI_3_8_FLASH';
+export const STITCH_MODELS: { id: StitchModel; label: string; short: string; hint: string }[] = [
+  { id: 'GEMINI_3_8_FLASH', label: 'Gemini 3.8 Flash', short: '3.8 Flash', hint: 'Best quality' },
+  { id: 'GEMINI_3_5_FLASH_LITE', label: 'Gemini 3.5 Flash-Lite', short: '3.5 Lite', hint: 'Fastest' },
+];
+/**
+ * Stitch retired the 0.3.x model IDs (GEMINI_3_FLASH / GEMINI_3_PRO / GEMINI_3_1_PRO) — sending them
+ * now fails with "Request contains an invalid argument". Old clients and stored preferences are mapped.
+ */
+export function normalizeStitchModel(m: unknown): StitchModel {
+  return m === 'GEMINI_3_5_FLASH_LITE' ? 'GEMINI_3_5_FLASH_LITE' : DEFAULT_STITCH_MODEL;
+}
 export type PlanId = 'free' | 'pro' | 'premium' | 'lifetime';
 export type BillingCycle = 'monthly' | 'annual' | 'one_time';
 export type ProjectKind = 'ui' | 'website' | 'logo' | 'improve';
@@ -18,6 +31,7 @@ export type Feature =
   | 'react_export'
   | 'auto_improve'
   | 'variants'
+  /** @deprecated Stitch retired its Pro model; kept so stored plans still type-check. Not advertised. */
   | 'pro_model'
   | 'priority_queue'
   | 'project_sharing';
@@ -25,6 +39,7 @@ export type Feature =
 /** Credit cost per operation — DesignForge platform credits, NOT Google quota. */
 export const CREDIT_COSTS = {
   generate_flash: 2,
+  /** Legacy (retired Pro model) — kept only so old ledger entries still have a label. */
   generate_pro: 5,
   edit: 2,
   variants: 4,
@@ -71,7 +86,7 @@ export const DEFAULT_PLANS: PlanDefinition[] = [
     id: 'premium', name: 'Premium', tagline: 'For studios and teams',
     priceInrMonthly: 1299, priceInrAnnual: 12470, monthlyCredits: 1500, annualCredits: 19000,
     maxProjects: 500, maxImproveIterations: 5,
-    features: ['ui_generation', 'website_studio', 'logo_studio', 'html_export', 'react_export', 'auto_improve', 'variants', 'pro_model', 'priority_queue', 'project_sharing'],
+    features: ['ui_generation', 'website_studio', 'logo_studio', 'html_export', 'react_export', 'auto_improve', 'variants', 'priority_queue', 'project_sharing'],
     active: true,
   },
   {
@@ -79,7 +94,7 @@ export const DEFAULT_PLANS: PlanDefinition[] = [
     priceInrMonthly: 0, priceInrAnnual: 0, priceInrOneTime: 14999,
     monthlyCredits: 0, annualCredits: 0, oneTimeCredits: 6000,
     maxProjects: 500, maxImproveIterations: 5,
-    features: ['ui_generation', 'website_studio', 'logo_studio', 'html_export', 'react_export', 'auto_improve', 'variants', 'pro_model', 'project_sharing'],
+    features: ['ui_generation', 'website_studio', 'logo_studio', 'html_export', 'react_export', 'auto_improve', 'variants', 'project_sharing'],
     active: true,
   },
 ];
@@ -202,6 +217,8 @@ export const ERROR_CODES = {
   STITCH_NO_ACCESS: 'STITCH_NO_ACCESS',
   STITCH_RATE_LIMITED: 'STITCH_RATE_LIMITED',
   STITCH_ERROR: 'STITCH_ERROR',
+  /** Stitch answered with a question instead of a design — rephrase the prompt with more detail. */
+  STITCH_CLARIFICATION: 'STITCH_CLARIFICATION',
   GEMINI_NOT_CONNECTED: 'GEMINI_NOT_CONNECTED',
   GEMINI_ERROR: 'GEMINI_ERROR',
   PAYMENT_INVALID: 'PAYMENT_INVALID',

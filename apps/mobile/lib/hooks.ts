@@ -26,7 +26,10 @@ export function useJob(jobId: string | null, onDone?: (j: Job) => void) {
     const tick = async () => {
       try {
         const { job: j } = await api.get<{ job: Job }>(`/jobs/${jobId}`);
-        if (stop) return; setJob(j);
+        if (stop) return;
+        // PERF: only re-render when something visible changed (polling every few seconds otherwise
+        // re-rendered the whole project screen, incl. the WebView preview).
+        setJob((prev) => (prev && prev.id === j.id && prev.status === j.status && prev.progress === j.progress && prev.stage === j.stage && prev.error?.message === j.error?.message ? prev : j));
         if (['succeeded', 'failed', 'cancelled'].includes(j.status)) { cb.current?.(j); return; }
       } catch { /* keep polling */ }
       delay = Math.min(delay * 1.3, 6000); t = setTimeout(tick, delay);

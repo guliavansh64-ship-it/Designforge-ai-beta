@@ -7,7 +7,7 @@ import { env } from '../config.js';
 import { stitchEngine } from './stitch.js';
 import { auditHtml, buildImprovementPlan, compareAudits, enrichPrompt } from './audit.js';
 import { createVersion, getVersion, loadProject } from './repo.js';
-import { persistRemoteImage } from './blobs.js';
+import { persistRemoteImage, putBlob } from './blobs.js';
 import * as credits from './credits.js';
 import { notify, track } from './notify.js';
 import { runLogoJob, type LogoJobInput } from './logos.js';
@@ -164,8 +164,11 @@ async function ensureStitchProject(project: Project, uid: string, ctx: JobCtx) {
   return id;
 }
 
-async function saveScreen(ctx: JobCtx, project: Project, pageId: string, r: { html: string; imageUrl?: string; screenId: string }, source: any, prompt: string, parentVersionId?: string, setHead = true) {
-  const imageUrl = r.imageUrl ? await persistRemoteImage(project.ownerId, r.imageUrl, { projectId: project.id }) : undefined;
+async function saveScreen(ctx: JobCtx, project: Project, pageId: string, r: { html: string; image?: { data: Buffer; mime: string }; imageUrl?: string; screenId: string }, source: any, prompt: string, parentVersionId?: string, setHead = true) {
+  // Screenshot bytes come from Stitch's download_file tool; persist them so the apps can show thumbnails.
+  const imageUrl = r.image
+    ? await putBlob(project.ownerId, r.image.data, r.image.mime, { projectId: project.id }).then((b) => b.url).catch(() => undefined)
+    : r.imageUrl ? await persistRemoteImage(project.ownerId, r.imageUrl, { projectId: project.id }) : undefined;
   const audit = auditHtml(r.html, project.kind as ProjectKind, project.deviceType);
   return createVersion({
     projectId: project.id, ownerId: project.ownerId, pageId, parentVersionId, source, prompt,

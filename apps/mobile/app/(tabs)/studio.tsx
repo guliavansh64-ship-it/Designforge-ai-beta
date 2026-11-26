@@ -1,3 +1,4 @@
+import { STITCH_MODELS, normalizeModel, type StitchModel } from '../../lib/models';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -21,11 +22,10 @@ export default function Studio() {
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [device, setDevice] = useState<'MOBILE' | 'TABLET' | 'DESKTOP'>(params.kind === 'website' ? 'DESKTOP' : 'MOBILE');
-  const [model, setModel] = useState<'GEMINI_3_FLASH' | 'GEMINI_3_1_PRO'>('GEMINI_3_FLASH');
+  const [model, setModel] = useState<StitchModel>(normalizeModel(me?.preferences?.defaultModel));
   const [style, setStyle] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<ApiError | null>(null);
-  const hasPro = me?.plan.features.includes('pro_model');
 
   const go = async () => {
     setBusy(true); setErr(null);
@@ -55,13 +55,13 @@ export default function Studio() {
             <Button key={d} small variant={device === d ? 'primary' : 'secondary'} title={d[0] + d.slice(1).toLowerCase()} icon={<I size={16} color={device === d ? '#fff' : c.text} />} onPress={() => setDevice(d)} style={{ flex: 1 }} />
           ))}</Row>
           <Label>Model</Label>
-          <Row><Chip label="Gemini 3 Flash · 2 cr" active={model === 'GEMINI_3_FLASH'} onPress={() => setModel('GEMINI_3_FLASH')} /><Chip label={`3.1 Pro · 5 cr${hasPro ? '' : ' 🔒'}`} active={model === 'GEMINI_3_1_PRO'} onPress={() => hasPro ? setModel('GEMINI_3_1_PRO') : router.push('/billing')} /></Row>
+          <Row style={{ flexWrap: 'wrap' }}>{STITCH_MODELS.map((m) => <Chip key={m.id} label={`${m.label} · ${m.hint}`} active={model === m.id} onPress={() => setModel(m.id)} />)}</Row>
           <Label>Style</Label>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{STYLES.map((s) => <Chip key={s} label={s} active={style === s} onPress={() => setStyle(style === s ? '' : s)} />)}</View>
         </Card>
         <ErrorBox error={err} />
         <Appear index={3}><Button title="Generate design" icon={<Sparkles color="#fff" size={18} />} loading={busy} disabled={prompt.trim().length < 5} onPress={go} /></Appear>
-        <Row style={{ justifyContent: 'center' }}><Coins size={14} color={c.amber} /><T muted size={12}>{model === 'GEMINI_3_1_PRO' ? 5 : 2} credits · refunded automatically if it fails</T></Row>
+        <Row style={{ justifyContent: 'center' }}><Coins size={14} color={c.amber} /><T muted size={12}>2 credits · refunded automatically if it fails</T></Row>
       </ScrollView>
     </KeyboardAvoidingView>
   );

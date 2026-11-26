@@ -8,6 +8,7 @@ import * as Notifications from 'expo-notifications';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { useColors } from '../lib/theme';
+import { DialogHost } from '../components/Dialog';
 
 function Gate() {
   const { me, loading } = useAuth();
@@ -51,5 +52,6 @@ function Gate() {
 }
 
 export default function Root() {
-  return <SafeAreaProvider><AuthProvider><StatusBar style="auto" /><Gate /></AuthProvider></SafeAreaProvider>;
+  // DialogHost sits above the navigator so animated dialogs/toasts overlay every screen.
+  return <SafeAreaProvider><AuthProvider><StatusBar style="auto" /><View style={{ flex: 1 }}><Gate /><DialogHost /></View></AuthProvider></SafeAreaProvider>;
 }

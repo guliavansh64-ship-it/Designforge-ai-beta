@@ -23,7 +23,7 @@ This satisfies: individual accounts, no shared admin key, no password collection
 
 ### 2.2 MCP Tools available (15 tools, discovered via SDK `listTools()`)
 - Projects: `create_project`, `get_project`, `list_projects`
-- Screens: `list_screens`, `get_screen`, `generate_screen_from_text` (model: `GEMINI_3_FLASH` / `GEMINI_3_1_PRO`), `edit_screens`
+- Screens: `list_screens`, `get_screen`, `generate_screen_from_text` (model: `GEMINI_3_8_FLASH` / `GEMINI_3_5_FLASH_LITE` since SDK 0.4.0; the 0.3.x IDs `GEMINI_3_FLASH`/`GEMINI_3_1_PRO` are now rejected with "invalid argument"), `edit_screens`
 - Design Systems: `create_design_system`, `update_design_system`, `list_design_systems`, `apply_design_system`
 - SDK high-level API: `new Stitch(client).projects()`, `project.generate(prompt, deviceType)`, `screen.edit()`, `screen.variants()`, `screen.getHtml()`, `screen.getImage()`, `project.createDesignSystem()`
 - Device types: `MOBILE | DESKTOP | TABLET | AGNOSTIC`

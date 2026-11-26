@@ -61,3 +61,5 @@ cd apps/api && npm run make-admin -- you@example.com owner
 
 ## Setup checklist
 Everything you need to provide (Firebase web config, secrets, Razorpay, SHA-1): **[docs/09-WHAT-I-NEED.md](docs/09-WHAT-I-NEED.md)**. Firebase Storage is not used.
+
+Testing the Android app without deploying: **[docs/11-LOCAL-TESTING.md](docs/11-LOCAL-TESTING.md)**. Render deployment: **[docs/10-DEPLOY-API-RENDER.md](docs/10-DEPLOY-API-RENDER.md)**.

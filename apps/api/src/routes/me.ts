@@ -1,3 +1,4 @@
+import { normalizeStitchModel } from '@designforge/shared';
 import { Router } from 'express';
 import { z } from 'zod';
 import { auth, db, C } from '../lib/firebase.js';
@@ -28,7 +29,10 @@ meRouter.get('/me', ah(async (req, res) => {
   res.json({
     user: { uid: u.uid, email: p.email, displayName: p.displayName, photoURL: p.photoURL, createdAt: p.createdAt, isAdmin: !!u.adminRole, adminRole: u.adminRole ?? null },
     plan: ent.plan, subscription: ent.sub, credits: balance, connections,
-    preferences: prefs.data() ?? { theme: 'system', defaultDevice: 'DESKTOP', defaultModel: 'GEMINI_3_FLASH', notificationPrefs: { push: true, email: false } },
+    preferences: (() => {
+      const pr = prefs.data() ?? { theme: 'system', defaultDevice: 'DESKTOP', notificationPrefs: { push: true, email: false } };
+      return { ...pr, defaultModel: normalizeStitchModel(pr.defaultModel) };
+    })(),
   });
 }));
 
@@ -37,7 +41,7 @@ meRouter.patch('/me', validate(z.object({
   preferences: z.object({
     theme: z.enum(['light', 'dark', 'system']).optional(),
     defaultDevice: z.enum(['MOBILE', 'DESKTOP', 'TABLET', 'AGNOSTIC']).optional(),
-    defaultModel: z.enum(['GEMINI_3_FLASH', 'GEMINI_3_1_PRO']).optional(),
+    defaultModel: z.string().max(40).optional().transform((m) => (m === undefined ? undefined : normalizeStitchModel(m))),
     notificationPrefs: z.object({ push: z.boolean(), email: z.boolean() }).partial().optional(),
   }).optional(),
 })), ah(async (req, res) => {

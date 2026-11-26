@@ -1,3 +1,4 @@
+import { normalizeStitchModel } from '@designforge/shared';
 import { Router } from 'express';
 import { z } from 'zod';
 import { parse } from 'node-html-parser';
@@ -43,7 +44,7 @@ chatRouter.get('/projects/:id/chat', ah(async (req, res) => {
 chatRouter.post('/projects/:id/chat', generationLimiter, validate(z.object({
   message: z.string().trim().min(2).max(2000), pageId: z.string(),
   deviceType: z.enum(['MOBILE', 'DESKTOP', 'TABLET', 'AGNOSTIC']).optional(),
-  model: z.enum(['GEMINI_3_FLASH', 'GEMINI_3_1_PRO']).default('GEMINI_3_FLASH'),
+  model: z.string().max(40).optional().transform(normalizeStitchModel),
   imageBase64: z.string().max(7_000_000).optional(), imageExt: z.enum(['.png', '.jpg', '.jpeg', '.webp']).optional(),
   idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/),
 })), ah(async (req, res) => {
@@ -89,7 +90,7 @@ chatRouter.post('/projects/:id/chat', generationLimiter, validate(z.object({
     job = await enqueue({ ownerId: uid, projectId: p.id, type: 'variants', prompt: req.body.message, op: 'variants', idempotencyKey: req.body.idempotencyKey, priority: plan.features.includes('priority_queue'), deviceType, model: req.body.model,
       payload: { prompt: req.body.message, pageId: page.id, count: 3, creativeRange: 'EXPLORE', deviceType, model: req.body.model } });
   } else if (c.intent === 'new_page') {
-    job = await enqueue({ ownerId: uid, projectId: p.id, type: 'generate', prompt: req.body.message, op: req.body.model === 'GEMINI_3_1_PRO' ? 'generate_pro' : 'generate_flash', idempotencyKey: req.body.idempotencyKey, priority: plan.features.includes('priority_queue'), deviceType, model: req.body.model,
+    job = await enqueue({ ownerId: uid, projectId: p.id, type: 'generate', prompt: req.body.message, op: 'generate_flash', idempotencyKey: req.body.idempotencyKey, priority: plan.features.includes('priority_queue'), deviceType, model: req.body.model,
       payload: { prompt: `${req.body.message}. Match the visual style, colours and typography of the existing "${page.name}" page in this project.`, deviceType, model: req.body.model, newPageName: c.pageName } });
   } else if (c.intent === 'improve') {
     job = await enqueue({ ownerId: uid, projectId: p.id, type: 'improve', prompt: req.body.message, op: 'improve_iteration', idempotencyKey: req.body.idempotencyKey, priority: plan.features.includes('priority_queue'), deviceType, model: req.body.model,

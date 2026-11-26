@@ -1,3 +1,4 @@
+import { normalizeStitchModel } from '@designforge/shared';
 import { Router } from 'express';
 import { z } from 'zod';
 import { db, C } from '../lib/firebase.js';
@@ -19,10 +20,11 @@ import { getSystemSettings } from '../services/settings.js';
 export const generateRouter = Router();
 
 const device = z.enum(['MOBILE', 'DESKTOP', 'TABLET', 'AGNOSTIC']);
-const model = z.enum(['GEMINI_3_FLASH', 'GEMINI_3_1_PRO']).default('GEMINI_3_FLASH');
+// Accepts current IDs and retired 0.3.x IDs from older app versions; always yields a valid Stitch model.
+const model = z.string().max(40).optional().transform(normalizeStitchModel);
 const idem = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, 'idempotencyKey must be 8–64 url-safe chars');
 
-async function preflight(uid: string, provider: 'stitch' | 'gemini', m?: string) {
+async function preflight(uid: string, provider: 'stitch' | 'gemini', _m?: string) {
   const conns = await listConnectionStatus(uid);
   const c = conns.find((x) => x.provider === provider)!;
   if (!c.connected) {
@@ -30,7 +32,6 @@ async function preflight(uid: string, provider: 'stitch' | 'gemini', m?: string)
     throw provider === 'stitch' ? Errors.stitchNotConnected() : Errors.geminiNotConnected();
   }
   const ent = await getEntitlements(uid);
-  if (m === 'GEMINI_3_1_PRO' && !ent.plan.features.includes('pro_model')) throw Errors.feature('Pro model (Gemini 3.1 Pro)');
   const settings = await getSystemSettings();
   return { ...ent, settings, priority: ent.plan.features.includes('priority_queue') };
 }
@@ -47,7 +48,7 @@ generateRouter.post('/projects/:id/generate', generationLimiter, validate(z.obje
   const deviceType = req.body.deviceType ?? project.deviceType;
   const job = await enqueue({
     ownerId: uid, projectId: project.id, type: 'generate', prompt: req.body.prompt,
-    payload: { ...req.body, deviceType }, op: req.body.model === 'GEMINI_3_1_PRO' ? 'generate_pro' : 'generate_flash',
+    payload: { ...req.body, deviceType }, op: 'generate_flash',
     idempotencyKey: req.body.idempotencyKey, priority: pf.priority, deviceType, model: req.body.model,
   });
   res.status(202).json({ job });

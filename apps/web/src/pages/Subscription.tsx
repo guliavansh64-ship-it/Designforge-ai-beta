@@ -8,7 +8,7 @@ import { useToast } from '../lib/toast';
 import { openCheckout } from '../lib/razorpay';
 import { Badge, Button, Card, ErrorBox, Modal, PageHeader, Tabs, cx } from '../components/ui';
 
-const FEATURE_LABEL: Record<string, string> = { ui_generation: 'UI generation via your Stitch', website_studio: 'Website Studio', logo_studio: 'Logo & Brand Studio', html_export: 'HTML export', react_export: 'React + TypeScript export', auto_improve: 'Auto-improve (multi-iteration)', variants: 'Design variations', pro_model: 'Gemini 3.1 Pro model', priority_queue: 'Priority queue', project_sharing: 'Project sharing' };
+const FEATURE_LABEL: Record<string, string> = { ui_generation: 'UI generation via your Stitch', website_studio: 'Website Studio', logo_studio: 'Logo & Brand Studio', html_export: 'HTML export', react_export: 'React + TypeScript export', auto_improve: 'Auto-improve (multi-iteration)', variants: 'Design variations', pro_model: '', priority_queue: 'Priority queue', project_sharing: 'Project sharing' };
 const ICON = { free: Zap, pro: Sparkles, premium: Crown, lifetime: Inf } as const;
 interface Payment { id: string; status: string; amountPaise: number; description: string; invoiceNumber?: string; method?: string; createdAt: number }
 
@@ -82,7 +82,7 @@ export default function Subscription() {
               <I className="h-6 w-6 text-forge-500" /><p className="mt-3 font-display text-lg font-semibold">{p.name}</p><p className="muted text-xs">{p.tagline}</p>
               <p className="mt-4 font-display text-3xl font-semibold">{price ? `₹${price.toLocaleString('en-IN')}` : '₹0'}<span className="muted text-sm font-normal">{p.id === 'lifetime' ? ' once' : price ? (cycle === 'annual' ? '/yr' : '/mo') : ''}</span></p>
               <p className="muted text-xs">{p.id === 'lifetime' ? `${p.oneTimeCredits?.toLocaleString('en-IN')} credits included` : `${(cycle === 'annual' ? p.annualCredits : p.monthlyCredits).toLocaleString('en-IN')} credits / ${cycle === 'annual' ? 'year' : 'month'}`} · {p.maxProjects} projects</p>
-              <ul className="mt-5 flex-1 space-y-2 text-sm">{p.features.map((f) => <li key={f} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />{FEATURE_LABEL[f] ?? f}</li>)}
+              <ul className="mt-5 flex-1 space-y-2 text-sm">{p.features.filter((f) => FEATURE_LABEL[f] !== '').map((f) => <li key={f} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />{FEATURE_LABEL[f] ?? f}</li>)}
                 {p.maxImproveIterations > 1 && <li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />Up to {p.maxImproveIterations} improve iterations</li>}</ul>
               {p.id === 'free' ? <Button className="mt-6" variant="secondary" disabled>{isCur ? 'Current plan' : 'Included'}</Button>
                 : <Button className="mt-6" variant={p.id === 'premium' ? 'ember' : 'primary'} disabled={isCur || !plans.data?.razorpayKeyId} loading={busy === p.id} onClick={() => purchase(p)}>{isCur ? 'Current plan' : `Get ${p.name}`}</Button>}
