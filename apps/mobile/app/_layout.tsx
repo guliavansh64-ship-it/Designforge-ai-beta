@@ -10,6 +10,11 @@ import { AuthProvider, useAuth } from '../lib/auth';
 import { useColors } from '../lib/theme';
 import { DialogHost } from '../components/Dialog';
 import { ServerWakeBanner } from '../components/ServerWakeBanner';
+import { ensureChannels } from '../lib/push';
+
+ensureChannels().catch(() => undefined);
+
+let handledTap: string | null = null;
 
 function Gate() {
   const { me, loading } = useAuth();
@@ -22,18 +27,26 @@ function Gate() {
     if (!me && !inLogin) router.replace('/login');
     else if (me && inLogin) router.replace('/');
   }, [me, loading, seg, router]);
-  // Tapping a push notification deep-links into the project.
+  // Tapping a push notification deep-links into the right screen — also when the tap is what
+  // launched the app from a fully CLOSED state (cold start), which the listener alone would miss.
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener((r) => {
+    const open = (r: Notifications.NotificationResponse | null) => {
+      if (!r) return;
       const d = (r.notification.request.content.data ?? {}) as { projectId?: string; kind?: string; type?: string };
       if (d.projectId) router.push(`/project/${d.projectId}`);
       else if (d.kind === 'billing' || d.type?.startsWith('payment') || d.type === 'credits_low' || d.type?.startsWith('subscription')) router.push('/billing');
       else if (d.kind === 'studio') router.push('/(tabs)/studio');
       else if (d.kind === 'projects') router.push('/(tabs)/projects');
       else router.push('/notifications');
-    });
+    };
+    if (!loading && me) {
+      Notifications.getLastNotificationResponseAsync().then((r) => {
+        if (r && handledTap !== r.notification.request.identifier) { handledTap = r.notification.request.identifier; setTimeout(() => open(r), 500); }
+      }).catch(() => undefined);
+    }
+    const sub = Notifications.addNotificationResponseReceivedListener((r) => { handledTap = r.notification.request.identifier; open(r); });
     return () => sub.remove();
-  }, [router]);
+  }, [router, loading, me]);
   if (loading) return (
     <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Loading DesignForge">
       <Orbs />

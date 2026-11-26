@@ -20,7 +20,7 @@ const config: ExpoConfig = {
     versionCode: 1,
     adaptiveIcon: { foregroundImage: './assets/icon.png', backgroundColor: '#0a0a0f' },
     ...(googleServicesFile && { googleServicesFile }),
-    permissions: ['POST_NOTIFICATIONS'],
+    permissions: ['POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE', 'WAKE_LOCK'],
     // Least privilege: strip permissions that libraries/templates add but this app never uses.
     // (Document picker uses the Storage Access Framework; sharing uses content URIs; no biometrics/overlay/phone state.)
     blockedPermissions: [
@@ -34,7 +34,8 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-secure-store',
     '@react-native-google-signin/google-signin',
-    ['expo-notifications', { color: '#7c5cff' }],
+    // Monochrome status-bar icon + default channel, so pushes shown by Android while the app is CLOSED look right.
+    ['expo-notifications', { icon: './assets/notification-icon.png', color: '#7c5cff', defaultChannel: 'default' }],
     './plugins/withReleaseSigning',
     './plugins/withTestCleartext',
   ],

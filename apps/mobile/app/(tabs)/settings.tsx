@@ -9,6 +9,7 @@ import { useColors } from '../../lib/theme';
 import { Card, Chip, Label, Row, T } from '../../components/ui';
 import { Animated, CountUp, PressScale, popIn } from '../../components/motion';
 import { ServerUrlCard } from '../../components/ServerUrlCard';
+import { PushHealthCard } from '../../components/PushHealthCard';
 
 export default function Settings() {
   const { me, logout, refresh } = useAuth();
@@ -35,10 +36,11 @@ export default function Settings() {
         {me?.user.isAdmin && <Item icon={BellRing} label="Admin · Send push notification" sub="Notify all users, a plan, or one user" onPress={() => router.push('/admin-push')} />}
       </Card>
       <Card index={2} style={{ gap: 12 }}>
-        <Row style={{ justifyContent: 'space-between' }}><View style={{ flex: 1 }}><T>Push notifications</T><T muted size={12}>Generation finished/failed, payments, renewals</T></View>
+        <Row style={{ justifyContent: 'space-between' }}><View style={{ flex: 1 }}><T>Push notifications</T><T muted size={12}>Design ready/failed, payments, plan reminders — also when the app is closed</T></View>
           <Switch value={push} trackColor={{ true: c.primary }} onValueChange={async (v) => { await patch({ preferences: { notificationPrefs: { push: v } } }); v ? registerForPush() : unregisterPush(); }} /></Row>
         <View><Label>Default device</Label><Row>{(['MOBILE', 'TABLET', 'DESKTOP'] as const).map((d) => <Chip key={d} label={d.toLowerCase()} active={me?.preferences.defaultDevice === d} onPress={() => patch({ preferences: { defaultDevice: d } })} />)}</Row></View>
       </Card>
+      {push && <PushHealthCard index={3} />}
       {/* Developer setting: only admins can see / change the server address. */}
       {me?.user.isAdmin && <ServerUrlCard index={3} onChanged={refresh} />}
       <Card index={3}>

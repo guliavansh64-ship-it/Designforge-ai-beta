@@ -26,7 +26,16 @@ export async function pushToUser(uid: string, title: string, body: string, data:
         tokens: fcm.slice(0, 500),
         notification: { title: title.slice(0, 120), body: body.slice(0, 500) },
         data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
-        android: { priority: 'high', notification: { channelId: data.channel || 'default', color: '#7c5cff', sound: 'default' } },
+        // A `notification` payload + high priority is displayed by Android itself (Google Play services),
+        // so it arrives even when the app is closed / swiped away — the app doesn't need to be running.
+        android: {
+          priority: 'high',
+          ttl: 3 * 24 * 3600 * 1000, // keep trying for 3 days if the phone is offline
+          notification: {
+            channelId: data.channel || 'default', icon: 'notification_icon', color: '#7c5cff',
+            sound: 'default', defaultVibrateTimings: true, visibility: 'public', priority: 'max',
+          },
+        },
       });
       sent += r.successCount; failed += r.failureCount;
       const dead = r.responses.map((x, i) => (!x.success && INVALID_TOKEN.has(x.error?.code ?? '') ? fcm[i] : null)).filter(Boolean) as string[];

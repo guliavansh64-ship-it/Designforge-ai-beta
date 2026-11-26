@@ -147,3 +147,22 @@ Razorpay variables can stay empty. When `ZETPAY_API_KEY` is set, ZetPay is the p
 - The Stitch model: 3.8 Flash, with automatic retry on 3.5 Flash-Lite.
 - The hidden prompt enhancement. Gemini runs on the user's own key when it is connected; otherwise the built-in planner is used. The enhanced prompts are never returned to clients.
 Gemini is used only for enhancement and for rewriting short chat edit requests. Stitch does every design.
+
+## Build 2026-11-29: push while the app is closed
+
+**Redeploy is required.** Phones can only save their push token on API build `2026-11-28` or newer. The older live build (`2026-11-27`) has no `/api/me/push-token` route, so no phone is registered and no push arrives, whether the app is open or closed. After deploying, `GET /health` must show `"build":"2026-11-29"`.
+
+What changed:
+- **Server (`notify.ts`):** sends FCM messages with a `notification` payload and `priority: high`, plus a 3-day TTL, a channel, a status-bar icon, sound, vibration and public lock-screen visibility. Android shows these by itself even when the app is closed or killed, so the app does not need to run.
+- **New route `POST /api/me/push-test`:** sends a test push 15 s later, so you can close the app and check delivery.
+- **App:**
+  - Creates high-importance channels at startup.
+  - Re-registers the token on every launch, with retries while the server wakes up.
+  - Opens the right screen when a notification is tapped from the closed state.
+  - Sets the status-bar icon and default channel in the manifest.
+  - New Settings card: "Notifications when the app is closed", with a test button, battery settings and brand-specific tips.
+
+Phone requirements:
+- Notifications are allowed.
+- The app is **not force-stopped**. Settings → Force stop blocks all pushes until the app is opened again; swiping it away from recents is fine.
+- On Xiaomi, Oppo, Vivo, Realme and Samsung phones: turn on Autostart and set battery to "No restrictions".

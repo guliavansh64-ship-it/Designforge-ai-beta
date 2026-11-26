@@ -8,6 +8,20 @@ Notifications.setNotificationHandler({
 });
 
 let current: string | null = null;
+
+/**
+ * Android notification channels. Created at app start (no permission needed) so that pushes which
+ * Android displays by itself while the app is CLOSED always land in a high-importance channel.
+ */
+export async function ensureChannels() {
+  if (Platform.OS !== 'android') return;
+  await Notifications.setNotificationChannelAsync('default', { name: 'General', importance: Notifications.AndroidImportance.HIGH, lightColor: '#7c5cff', sound: 'default', vibrationPattern: [0, 250, 150, 250], lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, showBadge: true });
+  await Notifications.setNotificationChannelAsync('jobs', { name: 'Design ready / failed', importance: Notifications.AndroidImportance.HIGH, sound: 'default', vibrationPattern: [0, 250, 150, 250], lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, showBadge: true });
+}
+
+export async function notificationPermission() {
+  return (await Notifications.getPermissionsAsync()).status;
+}
 let listening = false;
 
 async function save(token: string) {
@@ -22,14 +36,17 @@ async function save(token: string) {
  */
 export async function registerForPush(opts: { prompt?: boolean } = { prompt: true }) {
   if (!Device.isDevice || Platform.OS !== 'android') return null;
-  await Notifications.setNotificationChannelAsync('default', { name: 'General', importance: Notifications.AndroidImportance.HIGH, lightColor: '#7c5cff', sound: 'default' });
-  await Notifications.setNotificationChannelAsync('jobs', { name: 'Design generation', importance: Notifications.AndroidImportance.HIGH, sound: 'default' });
+  await ensureChannels();
   const { status: existing } = await Notifications.getPermissionsAsync();
   const status = existing === 'granted' || !opts.prompt ? existing : (await Notifications.requestPermissionsAsync()).status;
   if (status !== 'granted') return null;
   const { data } = await Notifications.getDevicePushTokenAsync();
   const token = typeof data === 'string' ? data : String(data ?? '');
-  await save(token);
+  // The free server may be waking up (~30-50 s) — retry so the token is never silently lost,
+  // otherwise this phone would receive no pushes at all (closed or open).
+  for (let i = 0; ; i++) {
+    try { await save(token); break; } catch (e) { if (i >= 4) throw e; await new Promise((r) => setTimeout(r, 4000 * (i + 1))); }
+  }
   if (!listening) {
     listening = true;
     // FCM rotates tokens occasionally — keep the server in sync.
