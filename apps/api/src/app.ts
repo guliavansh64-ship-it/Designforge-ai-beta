@@ -23,7 +23,7 @@ import { adminRouter } from './routes/admin.js';
 import { handleWebhook } from './services/billing.js';
 
 /** Bump when a deploy must be distinguishable from older ones (shown on /health). */
-export const API_BUILD = '2026-12-02';
+export const API_BUILD = '2026-12-03';
 
 export function createApp() {
   const app = express();

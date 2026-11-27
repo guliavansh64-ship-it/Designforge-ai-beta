@@ -15,7 +15,14 @@ export function firebase(): admin.app.App {
   return app;
 }
 
-export const db = () => firebase().firestore();
+let fs: admin.firestore.Firestore | undefined;
+/** Firestore with `ignoreUndefinedProperties`, so an optional field that is undefined can never crash a job. */
+export const db = () => {
+  if (fs) return fs;
+  fs = firebase().firestore();
+  try { fs.settings({ ignoreUndefinedProperties: true }); } catch { /* settings already applied */ }
+  return fs;
+};
 export const auth = () => firebase().auth();
 export const messaging = () => firebase().messaging();
 export const FieldValue = admin.firestore.FieldValue;

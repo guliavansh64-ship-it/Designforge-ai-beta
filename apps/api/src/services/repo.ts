@@ -45,7 +45,9 @@ export async function createVersion(
   await db().runTransaction(async (tx) => {
     const p = await tx.get(pRef);
     const pages = ((p.get('pages') as Project['pages']) ?? []).map((pg) =>
-      pg.id === input.pageId ? { ...pg, currentVersionId: id, stitchScreenId: input.stitchScreenId ?? pg.stitchScreenId } : pg);
+      pg.id === input.pageId
+        ? { ...pg, currentVersionId: id, ...((input.stitchScreenId ?? pg.stitchScreenId) ? { stitchScreenId: input.stitchScreenId ?? pg.stitchScreenId } : {}) }
+        : pg);
     tx.update(pRef, { pages, currentVersionId: id, updatedAt: Date.now(), ...(input.imageUrl ? { thumbnailUrl: input.imageUrl } : {}) });
   });
   return doc;

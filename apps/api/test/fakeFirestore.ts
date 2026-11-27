@@ -4,11 +4,16 @@ export function createFakeDb() {
   const store = new Map<string, Data>();
   let lock: Promise<void> = Promise.resolve();
   const merge = (a: Data = {}, b: Data) => ({ ...a, ...b });
+  /** Real Firestore (without ignoreUndefinedProperties) rejects undefined anywhere in a document — mimic it so tests catch it. */
+  const noUndef = (v: any, at = ''): void => {
+    if (v === undefined) throw new Error(`Cannot use "undefined" as a Firestore value (found in field "${at}")`);
+    if (v && typeof v === 'object' && !Buffer.isBuffer(v)) for (const [k, x] of Object.entries(v)) noUndef(x, at ? `${at}.${k}` : k);
+  };
   const docRef = (path: string): any => ({
     id: path.split('/').pop(), path,
     async get() { const d = store.get(path); return { exists: !!d, id: path.split('/').pop(), data: () => (d ? { ...d } : undefined), get: (k: string) => d?.[k], ref: docRef(path) }; },
-    async set(v: Data, o?: { merge?: boolean }) { store.set(path, o?.merge ? merge(store.get(path), v) : { ...v }); },
-    async update(v: Data) { if (!store.has(path)) throw new Error('NOT_FOUND ' + path); store.set(path, merge(store.get(path), v)); },
+    async set(v: Data, o?: { merge?: boolean }) { noUndef(v); store.set(path, o?.merge ? merge(store.get(path), v) : { ...v }); },
+    async update(v: Data) { noUndef(v); if (!store.has(path)) throw new Error('NOT_FOUND ' + path); store.set(path, merge(store.get(path), v)); },
     async delete() { store.delete(path); },
     collection: (c: string) => col(`${path}/${c}`),
   });

@@ -219,3 +219,18 @@ Redeploy the API, then check that `GET /health` shows `"build":"2026-12-02"`.
   - Look: curved notch, neon green/cyan border, dark glass body. Animations (breathing, rotating ring, halo, icon pop, ripple) respect the phone's reduce-motion setting.
   - The bar hides while the keyboard is open. Screens keep `tabBarSpace(insets.bottom)` free at the bottom.
   - Android back goes to Dashboard, then exits.
+
+## Build 2026-12-03: logo generation fixed, bottom bar in the app theme
+
+Redeploy the API, then check that `GET /health` shows `"build":"2026-12-03"`.
+
+- **Root cause of "Logo · Generation failed unexpectedly":** Stitch had already designed the logo and the images were stored. Then `createVersion` pointed the page at the new version with `stitchScreenId: undefined`, and Firestore rejects `undefined`, so the job crashed.
+  - Fixes:
+    - `repo.ts` only writes `stitchScreenId` when it has a value.
+    - `db()` now uses `ignoreUndefinedProperties`.
+    - Logo versions keep the Stitch screen ID.
+  - A second bug was found by the new test: with 2 or more concepts, adding the next page overwrote the earlier concepts' head versions. Pages are now appended in a transaction.
+  - Crashed jobs now store a technical `error.detail` for admins.
+  - The in-memory test database now rejects `undefined` like real Firestore. New end-to-end test: `test/logo-job.test.ts`.
+- **About Stitch and logos:** the Stitch API has no image or logo tool, only screen generation (`generate_screen_from_text`) plus screen HTML and screenshots. Logo Studio therefore asks Stitch to design a screen that contains only the logo on a white canvas, then crops Stitch's own rendering (`cropToLogo`).
+- **Bottom bar** uses the theme colours: card-coloured body, brand gradient border (`primary → #a855f7 → ember`), brand-gradient + button, `primary` for the active tab and `muted` for inactive tabs. It supports light and dark mode.

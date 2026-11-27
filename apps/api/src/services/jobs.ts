@@ -179,9 +179,11 @@ async function run(jobId: string) {
       await finish(job, 'cancelled', { stage: 'Cancelled' });
       return;
     }
-    const err = e instanceof AppError ? { code: e.code, message: e.message } : { code: 'INTERNAL_ERROR', message: 'Generation failed unexpectedly.' };
+    const err = e instanceof AppError ? { code: e.code, message: e.message } : { code: 'INTERNAL_ERROR', message: 'Generation failed unexpectedly. Your credits were refunded — please try again.' };
+    // Technical reason for admins (job doc only; the apps show `message`). Never contains keys: it's the exception text.
+    const detail = e instanceof AppError ? undefined : String((e as Error)?.message ?? e).replace(/AIza[0-9A-Za-z_-]{20,}/g, '[key]').slice(0, 300);
     if (!(e instanceof AppError)) logger.error({ err: e, jobId }, 'job crashed');
-    await finish(job, 'failed', { error: err, stage: 'Failed' });
+    await finish(job, 'failed', { error: detail ? { ...err, detail } : err, stage: 'Failed' });
     await db().collection(C.generations).add({ ownerId: job.ownerId, projectId: job.projectId, jobId, type: job.type, status: 'failed', error: err, createdAt: Date.now() });
     await track(`gen_failed_${job.type}`);
     await notify(job.ownerId, 'generation_failed', 'Design failed', `${err.message} Credits were refunded.`, { projectId: job.projectId, jobId });

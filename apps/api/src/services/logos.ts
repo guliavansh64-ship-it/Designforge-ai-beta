@@ -76,7 +76,7 @@ export async function cropToLogo(shot: Buffer, size = 1024): Promise<Buffer> {
 /** Stitch operations injected by the job runner (keeps logos.ts free of a runtime import cycle with jobs.ts). */
 export interface LogoStitch {
   ensureProject(project: Project): Promise<string>;
-  generate(stitchProjectId: string, prompt: string, label: string): Promise<{ html: string; image?: { data: Buffer; mime: string } }>;
+  generate(stitchProjectId: string, prompt: string, label: string): Promise<{ html: string; screenId?: string; image?: { data: Buffer; mime: string } }>;
 }
 
 export async function makeTransparent(png: Buffer, threshold = 238): Promise<Buffer> {
@@ -156,10 +156,12 @@ export async function runLogoJob(ctx: JobCtx, stitch: LogoStitch): Promise<strin
     const style = styles[i % styles.length];
     await ctx.stage(`Designing concept ${i + 1}/${input.count} (${style}) with Google Stitch`, 10 + (i / input.count) * 80);
     let png: Buffer;
+    let screenId: string | undefined;
     try {
       const r = await stitch.generate(sid, buildLogoPrompt(input, style), `${style} logo`);
       if (!r.image?.data?.length) throw new AppError(502, 'STITCH_EMPTY_RESULT', 'Stitch did not return a rendering for this logo. Please try again.');
       png = await cropToLogo(r.image.data);
+      screenId = r.screenId;
     } catch (e) {
       // Keep finished concepts; only fail the whole job when nothing could be made.
       if (i === input.count - 1 && !ids.length) throw e;
@@ -181,13 +183,19 @@ export async function runLogoJob(ctx: JobCtx, stitch: LogoStitch): Promise<strin
     if (svg) svgId = (await putBlob(uid, Buffer.from(svg), 'image/svg+xml', { ...meta, variant: 'svg' })).id;
 
     const pageId = newId('pg_');
-    const pages = [...project.pages, { id: pageId, name: `${style} concept ${project.pages.length + 1}` }];
-    await db().collection(C.projects).doc(project.id).update({ pages });
+    // Append the page transactionally from the CURRENT document (a local copy would wipe earlier concepts' head versions).
+    const pRef = db().collection(C.projects).doc(project.id);
+    const pages = await db().runTransaction(async (tx) => {
+      const cur = ((await tx.get(pRef)).get('pages') ?? []) as typeof project.pages;
+      const next = [...cur, { id: pageId, name: `${style} concept ${cur.length + 1}` }];
+      tx.update(pRef, { pages: next, updatedAt: Date.now() });
+      return next;
+    });
     project.pages = pages;
     const v = await createVersion({
       projectId: project.id, ownerId: uid, pageId, source: 'logo', prompt: buildLogoPrompt(input, style),
       html: brandPreviewHtml(input.brandName, { light: a1.url, dark: a3.url, transparent: a2.url }, palette, type, style),
-      imageUrl: a1.url,
+      imageUrl: a1.url, stitchScreenId: screenId,
     });
     await db().collection(C.versions).doc(v.id).update({
       logo: { style, palette, typography: type, assets: { light: a1.id, transparent: a2.id, dark: a3.id, monoWhite: a4.id, svg: svgId ?? null } },

@@ -123,7 +123,7 @@ export interface GenerationJob {
   creditsReserved: number;
   creditTxnId?: string;
   resultVersionIds?: string[];
-  error?: { code: string; message: string };
+  error?: { code: string; message: string; detail?: string };
   /** Prompt enhancement + full-app plan (generate jobs). */
   plan?: DesignPlanSummary;
   screensTotal?: number;
