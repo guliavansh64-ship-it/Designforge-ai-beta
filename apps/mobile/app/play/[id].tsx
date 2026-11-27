@@ -10,6 +10,8 @@ import { api, ApiError } from '../../lib/api';
 import { useColors } from '../../lib/theme';
 import type { Project, Version } from '../../lib/types';
 import { resolveTap, TAP_SCRIPT, type ProtoScreen } from '../../lib/prototype';
+import { canCompleteApp, completeApp } from '../../lib/completeApp';
+import { useAuth } from '../../lib/auth';
 import { ErrorBox, T } from '../../components/ui';
 import { Animated, PressScale } from '../../components/motion';
 import { Logo } from '../../components/Logo';
@@ -56,7 +58,7 @@ function ScreenView({ s, visible, onTap }: { s: Screen; visible: boolean; onTap:
 }
 
 export default function Play() {
-  const { id, page } = useLocalSearchParams<{ id: string; page?: string }>();
+  const { id } = useLocalSearchParams<{ id: string; page?: string }>();
   const router = useRouter();
   const c = useColors();
   const insets = useSafeAreaInsets();
@@ -68,6 +70,8 @@ export default function Play() {
   const history = useRef<string[]>([]);
   const [hint, setHint] = useState<string | null>('Tap buttons, tabs and menu items to move between screens');
   const [picker, setPicker] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const { me } = useAuth();
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -79,11 +83,12 @@ export default function Play() {
         const vs = await Promise.all(pages.map((pg) => api.get<{ version: Version }>(`/versions/${pg.currentVersionId}`).then((r) => r.version).catch(() => null)));
         const list: Screen[] = pages.map((pg, i) => ({ id: pg.id, name: pg.name, doc: prepare(vs[i]?.html ?? '', p.deviceType) })).filter((_, i) => !!vs[i]?.html);
         setScreens(list);
-        const start = list.find((x) => x.id === page)?.id ?? list[0]?.id ?? null;
+        // Play always starts the app from its first (home) screen, like opening the real app.
+        const start = list[0]?.id ?? null;
         setCurrent(start); if (start) setAlive([start]);
       } catch (e) { setErr(e as ApiError); }
     })();
-  }, [id, page]);
+  }, [id]);
 
   const flash = useCallback((msg: string, ms = 1800) => {
     setHint(msg);
@@ -118,7 +123,7 @@ export default function Play() {
     const r = resolveTap(label, href, screens, current);
     if (r.kind === 'go') go(r.id);
     else if (r.kind === 'back') { if (!back()) flash('This is the first screen'); }
-    else if (label.trim() && label.length <= 40 && screens.length > 1) flash(`No screen for “${label.trim().slice(0, 30)}” yet`);
+    else if (label.trim() && label.length <= 40) flash(`No screen for “${label.trim().slice(0, 30)}” yet`);
   }, [current, screens, go, back, flash]);
 
   const cur = screens.find((x) => x.id === current);
@@ -140,6 +145,19 @@ export default function Play() {
         <PressScale onPress={() => { history.current = []; if (screens[0]) go(screens[0].id, false); flash('Restarted from the first screen'); }} accessibilityLabel="Restart" style={{ padding: 8, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)' }}><RotateCcw size={18} color="#fff" /></PressScale>
       </View>
 
+      {project && screens.length === 1 && canCompleteApp(project.kind) && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#1b1530' }}>
+          <T size={12} style={{ color: '#fff', flex: 1 }}>This app has only 1 screen, so its tabs can’t open anything yet.</T>
+          <PressScale disabled={starting} onPress={async () => {
+            setStarting(true);
+            const jid = await completeApp(project, me?.credits ?? 0);
+            setStarting(false);
+            if (jid) router.replace(`/project/${id}?job=${jid}`);
+          }} accessibilityLabel="Complete this app" style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: c.primary, opacity: starting ? 0.6 : 1 }}>
+            <T size={12} weight="700" style={{ color: '#fff' }}>{starting ? 'Starting…' : 'Complete app'}</T>
+          </PressScale>
+        </View>
+      )}
       <View style={{ flex: 1, backgroundColor: '#fff' }}>
         {screens.filter((s) => alive.includes(s.id)).map((s) => <ScreenView key={s.id} s={s} visible={s.id === current} onTap={onTap} />)}
         {!screens.length && (

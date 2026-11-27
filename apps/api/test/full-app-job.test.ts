@@ -3,7 +3,7 @@ import { createFakeDb } from './fakeFirestore.js';
 import { CREDIT_COSTS } from '@designforge/shared';
 
 const fake = createFakeDb();
-const C = { wallets: 'credit_wallets', creditTxns: 'credit_transactions', jobs: 'generation_jobs', projects: 'projects', generations: 'generations' };
+const C = { wallets: 'credit_wallets', creditTxns: 'credit_transactions', jobs: 'generation_jobs', projects: 'projects', generations: 'generations', versions: 'project_versions' };
 vi.mock('../src/lib/firebase.js', () => ({ db: () => fake.db, C }));
 vi.mock('../src/services/plans.js', () => ({ getEntitlements: async () => ({ plan: { name: 'Free', monthlyCredits: 40, annualCredits: 480 }, sub: { cycle: 'none' } }) }));
 vi.mock('../src/services/connections.js', () => ({ listConnectionStatus: async () => [{ provider: 'gemini', connected: false }] }));
@@ -13,6 +13,7 @@ vi.mock('../src/services/blobs.js', () => ({ putBlob: vi.fn(), persistRemoteImag
 const prompts: string[] = [];
 const models: string[] = [];
 let failOn = -1;
+let headHtml = '';
 let failStatus = 502;
 let failCode = 'STITCH_ERROR';
 vi.mock('../src/services/stitch.js', () => ({
@@ -27,7 +28,7 @@ vi.mock('../src/services/stitch.js', () => ({
 }));
 vi.mock('../src/services/repo.js', () => ({
   loadProject: async (id: string) => { const s = await fake.db.collection('projects').doc(id).get(); return { id, ...s.data(), access: 'owner' }; },
-  getVersion: vi.fn(),
+  getVersion: vi.fn(async () => ({ html: headHtml })),
   createVersion: async (input: any) => {
     const id = `v_${Math.random().toString(36).slice(2, 8)}`;
     const ref = fake.db.collection('projects').doc(input.projectId);
@@ -121,5 +122,32 @@ describe('full-app generation job', () => {
     expect(done.error.message).toMatch(/4 screens.*covers 2 screens.*Nothing was generated/);
     expect(prompts).toHaveLength(0);
     expect(await credits.getBalance('u1')).toBe(12);
+  });
+
+  it('complete this app: an existing one-screen app gets a screen for every other tab in its bar', async () => {
+    headHtml = '<html><body><h1>Nova</h1><nav class="fixed bottom-0"><a href="#"><span class="material-symbols-outlined">home</span><span>Home</span></a><a href="#"><span class="material-symbols-outlined">explore</span>Bounties</a><a>Earnings</a><a>Profile</a></nav><style>.a{color:#4648d4}</style></body></html>';
+    await fake.db.collection('projects').doc('p1').set({ ownerId: 'u1', name: 'Nova', kind: 'ui', deviceType: 'MOBILE', pages: [{ id: 'pg_first', name: 'Screen 1', currentVersionId: 'v_home' }] });
+    const job = await jobs.enqueue({ ownerId: 'u1', projectId: 'p1', type: 'generate', prompt: 'A creative earning app',
+      payload: { prompt: 'A creative earning app', deviceType: 'MOBILE', model: 'GEMINI_3_8_FLASH', enhance: true, mode: 'app', maxScreens: 5, completeApp: true },
+      op: 'generate_flash', idempotencyKey: 'complete-app-1', priority: false });
+    const done = await waitDone(job.id);
+    expect(done.status).toBe('succeeded');
+    expect(done.resultVersionIds).toHaveLength(3);
+    const project = (await fake.db.collection('projects').doc('p1').get()).data()!;
+    expect(project.pages.map((p: any) => p.name)).toEqual(['Home', 'Bounties', 'Earnings', 'Profile']);
+    expect(project.pages[0].currentVersionId).toBe('v_home'); // existing screen untouched
+    expect(prompts.every((p) => p.includes('EXACTLY these labels, in this order: Home, Bounties, Earnings, Profile'))).toBe(true);
+    expect(prompts.every((p) => p.includes('#4648d4'))).toBe(true);
+    expect(await credits.getBalance('u1')).toBe(40 - 3 * CREDIT_COSTS.generate_flash);
+  });
+
+  it('a fresh complete app labels its tab bar with the real screen names', async () => {
+    const job = await jobs.enqueue({ ownerId: 'u1', projectId: 'p1', type: 'generate', prompt: 'create a complete fitness app',
+      payload: { prompt: 'create a complete fitness app', deviceType: 'MOBILE', model: 'GEMINI_3_8_FLASH', enhance: true, mode: 'app', maxScreens: 4 },
+      op: 'generate_flash', idempotencyKey: 'fresh-nav-1', priority: false });
+    const done = await waitDone(job.id);
+    expect(done.status).toBe('succeeded');
+    const names = done.plan.screens.map((s: any) => s.name);
+    expect(done.plan.navigation.every((n: string) => names.includes(n))).toBe(true);
   });
 });

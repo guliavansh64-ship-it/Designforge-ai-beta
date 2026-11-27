@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Sparkles, Coins, Plug, Dumbbell, UtensilsCrossed, Store, Palette, Layers, Rocket } from 'lucide-react-native';
+import { Sparkles, Coins, Plug, Dumbbell, UtensilsCrossed, Store, Palette, Layers, Rocket, LayoutGrid, Smartphone } from 'lucide-react-native';
 import { Easing, FadeInDown, FadeInUp, cancelAnimation, interpolateColor, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { api, newKey, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -55,6 +55,11 @@ export default function Studio() {
   const stitchOn = !!me?.connections.find((x) => x.provider === 'stitch')?.connected;
   /** Every screen costs 5 credits; a full app is planned with only as many screens as the balance covers. */
   const affordable = Math.floor((me?.credits ?? 0) / 5);
+  const appScreens = Math.min(affordable, 5);
+  /** 'app' = every screen of the app (5 cr each); 'single' = exactly one screen. */
+  const [kind, setKind] = useState<'app' | 'single'>('app');
+  const canApp = !me || affordable >= 2;
+  const chosen: 'app' | 'single' = kind === 'app' && canApp ? 'app' : 'single';
 
   const go = async () => {
     setBusy(true); setErr(null);
@@ -65,7 +70,7 @@ export default function Studio() {
       // "Untitled" is renamed by the server to the planned app name.
       const { project } = await api.post<{ project: Project }>('/projects', { name: 'Untitled', kind: web ? 'website' : 'ui', deviceType: web ? 'DESKTOP' : 'MOBILE' });
       created = project;
-      const { job } = await api.post<{ job: { id: string } }>(`/projects/${project.id}/generate`, { prompt: prompt.trim(), pageId: project.pages[0].id, idempotencyKey: newKey(), auto: true });
+      const { job } = await api.post<{ job: { id: string } }>(`/projects/${project.id}/generate`, { prompt: prompt.trim(), pageId: project.pages[0].id, idempotencyKey: newKey(), auto: true, mode: chosen });
       refresh(); setPrompt('');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       router.push(`/project/${project.id}?job=${job.id}`);
@@ -126,6 +131,28 @@ export default function Studio() {
           </Row>
         </View>
 
+        {/* What to make */}
+        <View style={{ gap: 8 }}>
+          <T muted size={12} weight="700" style={{ letterSpacing: 1 }}>WHAT TO MAKE</T>
+          <Row gap={10}>
+            {([
+              { k: 'app' as const, title: 'Complete app', sub: canApp ? `All screens · up to ${me ? appScreens : 5} (${me ? appScreens * 5 : 25} cr max)` : 'Needs 10+ credits (2 screens)', icon: LayoutGrid },
+              { k: 'single' as const, title: 'One screen', sub: '1 screen · 5 cr', icon: Smartphone },
+            ]).map((o) => {
+              const on = chosen === o.k;
+              const off = o.k === 'app' && !canApp;
+              return (
+                <PressScale key={o.k} disabled={off} onPress={() => { Haptics.selectionAsync().catch(() => undefined); setKind(o.k); }} accessibilityLabel={o.title} accessibilityState={{ selected: on, disabled: off }}
+                  style={{ flex: 1, padding: 12, borderRadius: 16, borderWidth: 1.5, borderColor: on ? c.primary : c.border, backgroundColor: on ? c.primary + '1f' : c.card, gap: 4, opacity: off ? 0.5 : 1 }}>
+                  <Row gap={6}><o.icon size={16} color={on ? c.primary : c.muted} /><T weight="700" size={14} style={{ color: on ? c.primary : c.text }}>{o.title}</T></Row>
+                  <T muted size={11}>{o.sub}</T>
+                </PressScale>
+              );
+            })}
+          </Row>
+          {chosen === 'app' && <T muted size={11}>Every screen is designed in the same style, with a working tab bar, so Play opens the whole app. You only pay for screens that are made. If your credits can’t cover them all, nothing is made.</T>}
+        </View>
+
         <ErrorBox error={err} />
         <Animated.View entering={FadeInUp.delay(420).springify()}>
           {!!me && affordable < 1 && (
@@ -133,7 +160,7 @@ export default function Studio() {
               <T size={13}>You have {me.credits} credit{me.credits === 1 ? '' : 's'}. Each screen needs 5. <T size={13} weight="700" style={{ color: c.primary }}>Get credits →</T></T>
             </PressScale>
           )}
-          <Button title={busy ? 'Starting…' : 'Generate design'} icon={<Sparkles color="#fff" size={18} />} loading={busy} disabled={prompt.trim().length < 5 || (!!me && !stitchOn) || (!!me && affordable < 1)} onPress={go} style={{ minHeight: 56, borderRadius: 28 }} />
+          <Button title={busy ? 'Starting…' : chosen === 'app' ? 'Generate complete app' : 'Generate one screen'} icon={<Sparkles color="#fff" size={18} />} loading={busy} disabled={prompt.trim().length < 5 || (!!me && !stitchOn) || (!!me && affordable < 1)} onPress={go} style={{ minHeight: 56, borderRadius: 28 }} />
         </Animated.View>
 
         {/* How it works */}

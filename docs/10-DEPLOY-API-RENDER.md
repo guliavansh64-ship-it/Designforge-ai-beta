@@ -284,3 +284,18 @@ Redeploy the API, then check that `GET /health` shows `"build":"2026-12-06"`. In
 - **Complete app = 5 cr per screen, all or nothing:** Studio shows "5 cr / screen · you can make up to N screens", and Generate is disabled with a "Get credits" link when you have fewer than 5 credits. The server plans only as many screens as the balance covers, then **reserves every screen up front**. If the balance can't cover them all, nothing is generated, nothing is charged, and the error says how many screens the balance allows. Screens that fail or are skipped are refunded.
 - **Smoother UI:** Version cards and Audit rows no longer overlap. The saved data cache loads before the first screen is drawn.
 - **Improve a design:** choose which **screen** of a project to improve; same-named projects show the screen count and date. The explanation text was rewritten.
+
+## Build 2026-12-07: complete apps really generate every screen; Play opens the whole app
+
+Redeploy the API, then check that `GET /health` shows `"build":"2026-12-07"`. Install the new APK.
+
+- **Bug fixed: "A … app" only made one Home screen.** Studio always sends the new project's empty first page, and the server treated that as "add one screen". Now only a page that *already has a design* means "one more screen" (`chooseGenerateMode` in `services/appShape.ts`, unit-tested).
+- **Studio, "What to make":** choose **Complete app** (default: all screens, up to 5, 5 cr each) or **One screen** (5 cr).
+  - Prompts saying "complete / full / entire / whole … app" or "all screens" always make a complete app.
+  - Credits for every screen are reserved up front. If they can't all be covered, nothing is generated and nothing is charged.
+- **Tabs = screens:** in a complete app, the bottom tab bar must use exactly the screens' names (e.g. Home, Workouts, Progress, Profile). That way every tab opens a real screen in Play.
+- **"Complete this app"** (project screen card, and a banner in Play when the app has only 1 screen):
+  - Reads the existing screen's tab bar (e.g. Nova: Home, Bounties, Earnings, Profile), colours and fonts.
+  - Designs one new screen per missing tab in the same look; the generic "Screen 1" is renamed to the first tab's name.
+  - `POST /projects/:id/generate {completeApp:true}`, 5 cr per screen, all or nothing.
+- **Play** always starts from the first (home) screen. When a multi-screen generation finishes, the app opens Play automatically.

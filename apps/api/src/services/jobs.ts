@@ -1,6 +1,6 @@
 import type { CreditOperation, DeviceType, GenerationJob, JobType, Project, ProjectKind, StitchModel } from '@designforge/shared';
 import { db, C } from '../lib/firebase.js';
-import { AppError } from '../lib/errors.js';
+import { AppError, Errors } from '../lib/errors.js';
 import { ERROR_CODES } from '@designforge/shared';
 import { newId } from '../lib/crypto.js';
 import { logger } from '../lib/logger.js';
@@ -13,6 +13,7 @@ import * as credits from './credits.js';
 import { notify, track } from './notify.js';
 import { runLogoEdit, runLogoJob, type LogoEditInput, type LogoJobInput } from './logos.js';
 import { safeQuery } from '../lib/safeQuery.js';
+import { extractNavLabels, extractStyleHint, screenSummary } from './appShape.js';
 import { enhance, enhanceEditInstruction, stitchPromptFor, type DesignPlan, type OutputMode } from './promptEnhancer.js';
 import { publicApiUrl } from '../config.js';
 
@@ -26,7 +27,7 @@ import { publicApiUrl } from '../config.js';
  * Scale-out path: replace `enqueue` with Cloud Tasks / BullMQ — runners are pure functions.
  */
 
-export interface GeneratePayload { chat?: boolean; prompt: string; deviceType: DeviceType; model: StitchModel; pageId?: string; newPageName?: string; category?: string; style?: string; enhance?: boolean; mode?: OutputMode; maxScreens?: number; plan?: DesignPlan; pageNames?: string[] }
+export interface GeneratePayload { chat?: boolean; prompt: string; deviceType: DeviceType; model: StitchModel; pageId?: string; newPageName?: string; category?: string; style?: string; enhance?: boolean; mode?: OutputMode; maxScreens?: number; plan?: DesignPlan; pageNames?: string[]; completeApp?: boolean }
 export interface EditPayload { chat?: boolean; prompt: string; pageId: string; deviceType: DeviceType; model: StitchModel; section?: string }
 export interface VariantsPayload { chat?: boolean; prompt: string; pageId: string; count: number; creativeRange: 'REFINE' | 'EXPLORE' | 'REIMAGINE'; deviceType: DeviceType; model: StitchModel }
 export interface ImprovePayload { chat?: boolean; pageId: string; instructions?: string; autoIterate: boolean; maxIterations: number; targetScore: number; deviceType: DeviceType; model: StitchModel; importAssetBase64?: string; importExt?: '.html' | '.png' | '.jpg' | '.jpeg' | '.webp' }
@@ -267,25 +268,81 @@ async function runGenerate(ctx: JobCtx) {
   const p = ctx.job.payload as GeneratePayload;
   const uid = ctx.job.ownerId;
   const project = await loadProject(ctx.job.projectId, uid, 'editor');
-  // A project that already has designs gets ONE more screen; a fresh project may become a full app.
+  // A project that already has designs gets ONE more screen (or, with completeApp, all its missing
+  // screens); a fresh project may become a full app.
   const hasDesigns = project.pages.some((x) => !!x.currentVersionId);
-  const addingToExisting = hasDesigns || !!p.newPageName;
-  const mode: OutputMode = addingToExisting ? 'single' : (p.mode ?? 'auto');
+  const complete = !!p.completeApp && hasDesigns;
+  const addingToExisting = !complete && (hasDesigns || !!p.newPageName);
+  const mode: OutputMode = complete ? 'app' : addingToExisting ? 'single' : (p.mode ?? 'auto');
+  const budget = Math.max(1, p.maxScreens ?? 5);
+
+  // "Complete this app": read the existing screen's tab bar + style so the new screens fill every tab.
+  let homeName = '';
+  let navAll: string[] = [];
+  let styleHint = '';
+  let summary = '';
+  let origPrompt = '';
+  let pageNames = p.pageNames;
+  let wantScreens = budget;
+  const lower = (x: string) => x.trim().toLowerCase();
+  if (complete) {
+    const head = project.pages.find((x) => !!x.currentVersionId)!;
+    const html = (await getVersion(head.currentVersionId!, uid).catch(() => undefined))?.html ?? '';
+    navAll = extractNavLabels(html);
+    styleHint = extractStyleHint(html);
+    homeName = head.name;
+    summary = screenSummary(html);
+    // The idea the app was first generated from (the head may be an edit like "make it darker").
+    const vs = await Promise.resolve().then(() => db().collection(C.versions).where('projectId', '==', project.id).get()).catch(() => null);
+    origPrompt = (vs?.docs.map((d) => d.data()) ?? []).filter((v) => v.source === 'stitch_generate' && v.prompt)
+      .sort((x, y) => (x.createdAt ?? 0) - (y.createdAt ?? 0))[0]?.prompt ?? '';
+    // A generic first page ("Screen 1") takes the first tab's name, so that tab leads back to it in Play.
+    if (navAll.length && /^(screen|page)\s*\d+$/i.test(head.name) && !project.pages.some((x) => lower(x.name) === lower(navAll[0]))) {
+      homeName = navAll[0];
+      await mutatePages(project, (pages) => pages.map((x) => (x.id === head.id ? { ...x, name: homeName } : x)));
+    }
+    const have = new Set([...project.pages.filter((x) => x.currentVersionId).map((x) => lower(x.name)), lower(homeName)]);
+    if (navAll.length) {
+      const missing = navAll.filter((n) => !have.has(lower(n)));
+      if (!missing.length) throw Errors.validation(`Every tab (${navAll.join(', ')}) already has a screen. Use "Add page" to add more screens.`);
+      pageNames = missing.slice(0, budget);
+      wantScreens = pageNames.length;
+    } else wantScreens = Math.min(budget, 4);
+  }
 
   // Enhancement is ALWAYS on (hidden from the user): Gemini (user's own key) or the built-in planner.
-  // 1. Enhance the prompt (user's own Gemini key, else built-in planner) and plan the screens.
   const existingName = addingToExisting ? (p.pageId ? project.pages.find((x) => x.id === p.pageId)?.name : p.newPageName) : undefined;
-  await ctx.stage('Understanding your idea', 3);
+  await ctx.stage(complete ? 'Reading your app’s design' : 'Understanding your idea', 3);
   const plan: DesignPlan = await ctx.timed(enhance(uid, {
-    prompt: p.prompt, kind: project.kind, device: p.deviceType, style: p.style, category: p.category,
-    mode, maxScreens: p.maxScreens ?? 5, pageName: existingName, pageNames: p.pageNames,
+    prompt: complete ? `${origPrompt || p.prompt} (app name: ${project.name}).\n\nThe app already has a "${homeName}" screen showing: ${summary}\n\nDesign the OTHER screens of the same app, with matching content.` : p.prompt,
+    kind: project.kind, device: p.deviceType,
+    style: p.style,
+    category: p.category, mode, maxScreens: complete && !navAll.length ? wantScreens + 1 : wantScreens, pageName: existingName, pageNames,
   }), 'Prompt enhancement');
+  if (complete) {
+    const have = new Set(project.pages.filter((x) => x.currentVersionId).map((x) => lower(x.name)).concat(lower(homeName)));
+    let rest = plan.screens.filter((x) => !have.has(lower(x.name)));
+    // No tab bar found and nothing matched by name: the planner's first screen is its own "home"; skip it.
+    if (!navAll.length && rest.length === plan.screens.length && rest.length > 1) rest = rest.slice(1);
+    plan.screens = rest.slice(0, budget);
+    if (!plan.screens.length) throw Errors.validation('This app already has all its main screens. Use "Add page" to add more.');
+    plan.isFullApp = true;
+    plan.appName = project.name;
+    if (styleHint) plan.matchStyle = styleHint;
+    plan.navigation = navAll.length ? navAll : [homeName, ...plan.screens.map((x) => x.name)].slice(0, 5);
+    plan.designBrief = `${plan.designBrief} IMPORTANT: this ${project.kind === 'website' ? 'page' : 'screen'} joins an existing app whose "${homeName}" screen is already designed. Match its look exactly.`.slice(0, 1600);
+  } else if (plan.isFullApp && plan.screens.length > 1) {
+    // Tabs must use the screens' own names, so every tab opens a real screen in Play mode.
+    const names = plan.screens.map((x) => x.name);
+    const navOk = plan.navigation.length >= 2 && plan.navigation.every((n) => names.some((m) => lower(m) === lower(n)));
+    if (!navOk) plan.navigation = names.slice(0, 5);
+  }
   const total = plan.screens.length;
   await jobRef(ctx.job.id).update({ plan, screensTotal: total, screensDone: 0, updatedAt: Date.now() });
   await ctx.stage(total > 1 ? `Designing ${total} screens for ${plan.appName}` : `Designing ${plan.screens[0].name}`, 6);
 
   // Rename an untitled project after the planned app.
-  if (!addingToExisting && /^(untitled|test|new project|my project)/i.test(project.name)) {
+  if (!addingToExisting && !complete && /^(untitled|test|new project|my project)/i.test(project.name)) {
     await db().collection(C.projects).doc(project.id).update({ name: plan.appName, nameLower: plan.appName.toLowerCase() }).catch(() => undefined);
   }
 
@@ -326,7 +383,7 @@ async function runGenerate(ctx: JobCtx) {
     // Screen 1 was paid at enqueue; the others were reserved above (refunded if they fail or are skipped).
     const txn: string | undefined = preTxns[i];
     try {
-      const pageId = i === 0
+      const pageId = i === 0 && !complete
         ? await firstPage(project, p, plan.isFullApp && !addingToExisting ? screen.name : undefined, !addingToExisting)
         : await ensurePage(project, undefined, screen.name);
       await ctx.stage(total > 1 ? `Screen ${i + 1}/${total} · ${screen.name} · generating with Stitch` : `Generating ${screen.name} with Google Stitch (30–120s)`, Math.round(base + 2));
@@ -352,7 +409,7 @@ async function runGenerate(ctx: JobCtx) {
   await releaseUnused('Screen not generated');
   if (warnings.length) await jobRef(ctx.job.id).update({ warnings });
   // The project card should show the app's first (home) screen, not whichever finished last.
-  if (ids.length > 1 && firstVersion) {
+  if (ids.length > 1 && firstVersion && !complete) {
     await db().collection(C.projects).doc(project.id).update({ currentVersionId: firstVersion.id, ...(firstVersion.imageUrl ? { thumbnailUrl: firstVersion.imageUrl } : {}) }).catch(() => undefined);
   }
   return ids;

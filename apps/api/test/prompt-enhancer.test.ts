@@ -40,7 +40,7 @@ describe('Stitch prompt for each screen', () => {
     expect(p).toContain('PulseFit: Workouts screen');
     expect(p).toContain(plan.theme.primary);
     expect(p).toContain('screen 2 of 5');
-    expect(p).toContain('bottom tab bar: Home, Workouts, Progress, Profile');
+    expect(p).toContain('bottom tab bar with EXACTLY these labels, in this order: Home, Workouts, Progress, Profile');
     expect(p).toMatch(/Do not ask clarifying questions/);
   });
 });

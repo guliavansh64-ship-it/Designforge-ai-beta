@@ -3,9 +3,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { showAlert, toast } from '../../components/Dialog';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { Smartphone, Tablet, Monitor, Wand2, Shuffle, Sparkles, History, Download, ClipboardCheck, CheckCircle2, XCircle, X, Lock, Maximize2, FileText, Info, Play, Pencil } from 'lucide-react-native';
+import { Smartphone, Tablet, Monitor, Wand2, Shuffle, Sparkles, History, Download, ClipboardCheck, CheckCircle2, XCircle, X, Lock, Maximize2, FileText, Info, Play, Pencil, LayoutGrid } from 'lucide-react-native';
 import { api, newKey, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { canCompleteApp, completeApp } from '../../lib/completeApp';
 import { useApi, useJob, timeAgo } from '../../lib/hooks';
 import { useColors } from '../../lib/theme';
 import type { Job, Project, Version } from '../../lib/types';
@@ -121,7 +122,8 @@ export default function ProjectScreen() {
       const multi = (j.resultVersionIds?.length ?? 0) > 1;
       if (j.type !== 'variants') toast(j.type === 'edit' || j.type === 'chat_edit' ? 'Changes applied ✨' : multi ? `Your app is ready — ${j.resultVersionIds!.length} screens ✨` : 'Your design is ready ✨', 'success');
       // A fresh generation opens straight into the full-screen device preview.
-      if (j.type === 'generate' && sawRunning) router.push(`/preview/${id}`);
+      // A multi-screen app opens straight into Play, so every tab can be tried at once.
+      if (j.type === 'generate' && sawRunning) router.push(multi ? `/play/${id}` : `/preview/${id}`);
     } else if (j.status === 'failed') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
     }
@@ -195,6 +197,14 @@ export default function ProjectScreen() {
           </Card>
         )}
         {job && <JobCard job={job} onDismiss={() => setJobId(null)} />}
+        {isOwner && canCompleteApp(project.kind) && designedCount >= 1 && designedCount < 3 && !running && (
+          <Card style={{ gap: 8, borderColor: c.primary + '66' }}>
+            <Row><LayoutGrid size={18} color={c.primary} /><T weight="700" style={{ flex: 1 }}>{designedCount === 1 ? `This app has only 1 ${project.kind === 'website' ? 'page' : 'screen'}` : `This app has ${designedCount} ${project.kind === 'website' ? 'pages' : 'screens'}`}</T></Row>
+            <T muted size={12}>Create the other {project.kind === 'website' ? 'pages' : 'screens'} (one for each tab in the {project.kind === 'website' ? 'menu' : 'bottom bar'}) in the same style. Then Play opens the complete app and every tab works.</T>
+            <Button small title={`Complete this app · 5 cr / ${project.kind === 'website' ? 'page' : 'screen'}`} icon={<Sparkles size={16} color="#fff" />} disabled={!stitchOk} loading={busy === 'complete'}
+              onPress={async () => { setBusy('complete'); setErr(null); const jid = await completeApp(project, me?.credits ?? 0, (e) => setErr(e)); setBusy(null); if (jid) { setJobId(jid); refresh(); } }} />
+          </Card>
+        )}
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
           {([['ai', 'AI edit', Wand2], ['versions', 'Versions', History], ['audit', 'Audit', ClipboardCheck], ['export', 'Export', Download]] as const).map(([t, l]) => <Chip key={t} label={l} active={tab === t} onPress={() => setTab(t)} />)}

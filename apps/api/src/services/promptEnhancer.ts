@@ -28,6 +28,8 @@ export interface DesignPlan {
   designBrief: string;
   navigation: string[];
   screens: ScreenSpec[];
+  /** Completing an existing app: copy this screen's style instead of the planned theme. */
+  matchStyle?: string;
 }
 export interface EnhanceInput { prompt: string; kind: ProjectKind; device: DeviceType; style?: string; category?: string; mode: OutputMode; maxScreens: number; pageName?: string; pageNames?: string[] }
 
@@ -288,9 +290,9 @@ export function stitchPromptFor(plan: DesignPlan, index: number, kind: ProjectKi
   const parts = [
     `${plan.appName}: ${s.name} ${unit}.`,
     plan.designBrief,
-    `Visual system: ${t.mood}. ${t.dark ? 'Dark' : 'Light'} theme. Background ${t.background}, primary ${t.primary}, accent ${t.accent}. Headings in ${t.headingFont}, body in ${t.bodyFont}. ${t.corners}. Consistent 4/8px spacing, WCAG AA contrast, realistic content (no lorem ipsum).`,
+    plan.matchStyle ? `Visual system: copy the existing screen's look exactly: ${plan.matchStyle}. Same header, cards, buttons, icons and bottom bar. Consistent 4/8px spacing, WCAG AA contrast, realistic content (no lorem ipsum).` : `Visual system: ${t.mood}. ${t.dark ? 'Dark' : 'Light'} theme. Background ${t.background}, primary ${t.primary}, accent ${t.accent}. Headings in ${t.headingFont}, body in ${t.bodyFont}. ${t.corners}. Consistent 4/8px spacing, WCAG AA contrast, realistic content (no lorem ipsum).`,
     plan.isFullApp && plan.screens.length > 1
-      ? `This is ${unit} ${index + 1} of ${plan.screens.length} of the same product (${plan.screens.map((x) => x.name).join(', ')}). ${plan.navigation.length ? `Use the shared ${kind === 'website' ? 'header navigation' : 'bottom tab bar'}: ${plan.navigation.join(', ')}.` : ''} Keep every ${unit} visually consistent with the others.`
+      ? `This is ${unit} ${index + 1} of ${plan.screens.length} of the same product (${plan.screens.map((x) => x.name).join(', ')}). ${plan.navigation.length ? `Use the shared ${kind === 'website' ? 'header navigation' : 'bottom tab bar'} with EXACTLY these labels, in this order: ${plan.navigation.join(', ')}${plan.navigation.some((n) => n.toLowerCase() === s.name.toLowerCase()) ? ` ("${s.name}" is the active item)` : ''}.` : ''} Buttons and links that open another ${unit} of the app use that ${unit}'s name in their label. Keep every ${unit} visually consistent with the others.`
       : '',
     `${titleCase(unit)} details: ${s.prompt}`,
     NO_QUESTIONS,

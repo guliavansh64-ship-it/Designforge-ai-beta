@@ -1,4 +1,4 @@
-import { normalizeStitchModel } from '@designforge/shared';
+import { ERROR_CODES, normalizeStitchModel } from '@designforge/shared';
 import { Router } from 'express';
 import { z } from 'zod';
 import { db, C } from '../lib/firebase.js';
@@ -13,6 +13,7 @@ import { getSystemSettings } from '../services/settings.js';
 import { safeQuery } from '../lib/safeQuery.js';
 import { autoDevice, enhance } from '../services/promptEnhancer.js';
 import * as credits from '../services/credits.js';
+import { chooseGenerateMode } from '../services/appShape.js';
 
 /**
  * AI generation endpoints. All return 202 + a job; clients poll GET /jobs/:id.
@@ -57,6 +58,8 @@ generateRouter.post('/projects/:id/generate', generationLimiter, validate(z.obje
   enhance: z.boolean().optional(), mode: z.enum(['auto', 'single', 'app']).optional(),
   maxScreens: z.number().int().min(2).max(6).optional(), plan: planSchema.optional(), auto: z.boolean().optional(),
   pageNames: z.array(z.string().trim().min(1).max(40)).max(6).optional(),
+  // Existing project: design the app's remaining screens (one per tab in its navigation).
+  completeApp: z.boolean().optional(),
 })), ah(async (req, res) => {
   const uid = req.user!.uid;
   const project = await loadProject(req.params.id, uid, 'owner');
@@ -68,17 +71,26 @@ generateRouter.post('/projects/:id/generate', generationLimiter, validate(z.obje
    * one). Client-sent style/model/mode from older app builds are ignored.
    */
   const hasDesigns = project.pages.some((x) => !!x.currentVersionId);
-  const deviceType = hasDesigns || req.body.pageId || req.body.newPageName ? project.deviceType : autoDevice(req.body.prompt, project.kind, project.deviceType);
+  // An EMPTY target page (new projects come with an empty "Screen 1") is not "adding to existing".
+  const target = req.body.pageId ? project.pages.find((x) => x.id === req.body.pageId) : undefined;
+  const addingOne = !req.body.completeApp && (hasDesigns || !!req.body.newPageName || !!target?.currentVersionId);
+  const deviceType = hasDesigns || addingOne ? project.deviceType : autoDevice(req.body.prompt, project.kind, project.deviceType);
   if (!hasDesigns && deviceType !== project.deviceType) await db().collection(C.projects).doc(project.id).update({ deviceType }).catch(() => undefined);
-  // A full app is charged per screen as each one starts; plan only as many screens as the user can afford.
+  // Every screen costs 5 cr. Plan only as many screens as the balance covers; ALL are reserved up front by the job.
   const per = credits.costOf('generate_flash', 1);
   const bal = await credits.getBalance(uid);
   if (bal < per) throw Errors.credits(per, bal);
-  const maxScreens = Math.max(2, Math.min(5, Math.floor(bal / per)));
-  const mode = hasDesigns || req.body.pageId || req.body.newPageName ? 'single' : bal < per * 2 ? 'single' : 'auto';
+  const affordable = Math.floor(bal / per);
+  const { mode, error } = chooseGenerateMode({
+    hasDesigns, targetHasDesign: !!target?.currentVersionId, newPageName: req.body.newPageName, completeApp: req.body.completeApp,
+    requested: req.body.mode, prompt: req.body.prompt, affordable,
+  });
+  if (error === 'needs_design') throw Errors.validation('Design the first screen before completing the app.');
+  if (error === 'needs_two') throw new AppError(402, ERROR_CODES.INSUFFICIENT_CREDITS, `A complete app needs at least 2 screens (${2 * per} credits, ${per} per screen). You have ${bal} credits, enough for ${affordable} screen. Nothing was generated.`, 'open_billing');
+  const maxScreens = Math.max(1, Math.min(5, affordable));
   const job = await enqueue({
     ownerId: uid, projectId: project.id, type: 'generate', prompt: req.body.prompt,
-    payload: { prompt: req.body.prompt, pageId: req.body.pageId, newPageName: req.body.newPageName, deviceType, enhance: true, mode, maxScreens, model: 'GEMINI_3_8_FLASH' },
+    payload: { prompt: req.body.prompt, pageId: req.body.completeApp ? undefined : req.body.pageId, newPageName: req.body.newPageName, deviceType, enhance: true, mode, maxScreens, completeApp: !!req.body.completeApp, pageNames: req.body.pageNames, model: 'GEMINI_3_8_FLASH' },
     op: 'generate_flash', idempotencyKey: req.body.idempotencyKey, priority: pf.priority, deviceType, model: 'GEMINI_3_8_FLASH',
   });
   res.status(202).json({ job });
