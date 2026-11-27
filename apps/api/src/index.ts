@@ -4,7 +4,7 @@ assertProductionConfig();
 
 const { createApp } = await import('./app.js');
 const { logger } = await import('./lib/logger.js');
-const { recoverInterruptedJobs, startSchedulers, startStaleJobSweeper } = await import('./services/jobs.js');
+const { recoverInterruptedJobs, startKeepAwake, startSchedulers, startStaleJobSweeper } = await import('./services/jobs.js');
 
 const app = createApp();
 const server = app.listen(env.PORT, '0.0.0.0', () => logger.info(`Designo API listening on :${env.PORT}`));
@@ -13,6 +13,7 @@ recoverInterruptedJobs().catch((e) => logger.error({ err: e }, 'job recovery fai
 startStaleJobSweeper();
 (await import('./services/zetpay.js')).startZetpayReconciler();
 startSchedulers();
+startKeepAwake();
 
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
   process.on(sig, () => { logger.info(`${sig} received, shutting down`); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 10_000).unref(); });

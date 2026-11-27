@@ -2,12 +2,16 @@ package expo.modules.designopower
 
 import android.app.ActivityManager
 import android.content.ComponentName
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.os.PowerManager
+import android.provider.MediaStore
 import android.provider.Settings
+import java.io.File
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -27,6 +31,49 @@ class DesignoPowerModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("DesignoPower")
+
+    /**
+     * Saves a file from the app cache into the phone's public Downloads/Designo folder (a real download,
+     * no share sheet). Android 10+ uses MediaStore, which needs no storage permission.
+     * Returns the content:// URI of the saved file. Throws on Android 9 and older (the app then falls back
+     * to the share sheet).
+     */
+    AsyncFunction("saveToDownloads") { srcPath: String, fileName: String, mime: String ->
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) throw IllegalStateException("Direct downloads need Android 10 or newer")
+      val src = File(Uri.parse(srcPath).path ?: srcPath)
+      if (!src.exists()) throw IllegalStateException("Downloaded file is missing")
+      val resolver = ctx.contentResolver
+      val values = ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+        put(MediaStore.MediaColumns.MIME_TYPE, mime)
+        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Designo")
+        put(MediaStore.MediaColumns.IS_PENDING, 1)
+      }
+      val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+        ?: throw IllegalStateException("Could not create the file in Downloads")
+      try {
+        val out = resolver.openOutputStream(uri) ?: throw IllegalStateException("Could not write to Downloads")
+        out.use { o -> src.inputStream().use { i -> i.copyTo(o) } }
+        val done = ContentValues()
+        done.put(MediaStore.MediaColumns.IS_PENDING, 0)
+        resolver.update(uri, done, null, null)
+      } catch (e: Exception) {
+        resolver.delete(uri, null, null)
+        throw e
+      }
+      uri.toString()
+    }
+
+    /** Opens a saved download (content:// URI) in a viewer app. */
+    Function("openFile") { uri: String, mime: String ->
+      val i = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(uri), mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      start(Intent.createChooser(i, "Open with").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+    }
+
+    /** Opens the system Downloads app. */
+    Function("openDownloads") {
+      start(Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS))
+    }
 
     /** true when Android battery optimisation is OFF for this app ("Unrestricted" / "Don't optimise"). */
     Function("isIgnoringBatteryOptimizations") {

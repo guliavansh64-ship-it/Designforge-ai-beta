@@ -1,5 +1,7 @@
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Power } from '../modules/designo-power';
 import { fbAuth, firebaseConfigured } from './firebase';
 
 import * as SecureStore from 'expo-secure-store';
@@ -105,12 +107,47 @@ async function request<T>(method: string, path: string, body?: unknown, retry = 
 const cache = new Map<string, { data: unknown; at: number }>();
 const inflight = new Map<string, Promise<unknown>>();
 export const peekCache = <T,>(path: string) => cache.get(path)?.data as T | undefined;
-export const clearApiCache = () => cache.clear();
+export const clearApiCache = () => { cache.clear(); schedulePersist(); };
+
+// The GET cache is also saved on the phone, so lists and projects appear INSTANTLY on the next app launch
+// (then refresh in the background) instead of waiting for the server.
+const PERSIST_KEY = 'api-cache-v1';
+const PERSIST_MAX = 900_000; // stay far below Android's AsyncStorage row limit
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersist() {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    const out: Record<string, { data: unknown; at: number }> = {}; let size = 0;
+    for (const [k, v] of [...cache.entries()].sort((a, b) => b[1].at - a[1].at)) {
+      if (k.startsWith('/jobs/') || k.startsWith('/admin')) continue;
+      const len = JSON.stringify(v.data)?.length ?? 0;
+      if (len > 250_000 || size + len > PERSIST_MAX) continue;
+      out[k] = v; size += len;
+    }
+    AsyncStorage.setItem(PERSIST_KEY, JSON.stringify(out)).catch(() => undefined);
+  }, 1500);
+}
+export const cacheHydrated: Promise<void> = AsyncStorage.getItem(PERSIST_KEY).then((raw) => {
+  if (!raw) return;
+  const saved = JSON.parse(raw) as Record<string, { data: unknown; at: number }>;
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  for (const [k, v] of Object.entries(saved)) if (v.at > weekAgo && !cache.has(k)) cache.set(k, v);
+}).catch(() => undefined);
+/** Signing out must not leave the previous account's data on the phone. */
+export const wipeApiCache = () => { cache.clear(); AsyncStorage.removeItem(PERSIST_KEY).catch(() => undefined); };
+
+/** Wake the server the moment the app opens (before sign-in finishes), so the first real request is fast. */
+export function warmUpServer() {
+  if (!apiUrl) return;
+  fetch(`${apiUrl}/health`).catch(() => undefined);
+}
+setTimeout(warmUpServer, 0);
 function cachedGet<T>(path: string): Promise<T> {
   const running = inflight.get(path);
   if (running) return running as Promise<T>;
   const p = request<T>('GET', path)
-    .then((d) => { cache.set(path, { data: d, at: Date.now() }); return d; })
+    .then((d) => { cache.set(path, { data: d, at: Date.now() }); schedulePersist(); return d; })
     .finally(() => inflight.delete(path));
   inflight.set(path, p);
   return p;
@@ -122,26 +159,45 @@ export const api = {
   post: <T,>(p: string, b?: unknown) => mutate<T>('POST', p, b ?? {}),
   patch: <T,>(p: string, b?: unknown) => mutate<T>('PATCH', p, b ?? {}),
   del: <T,>(p: string, b?: unknown) => mutate<T>('DELETE', p, b),
-  /** Downloads a ZIP (export / brand kit) to app storage and opens the Android share sheet. */
-  async downloadAndShare(method: 'GET' | 'POST', path: string, body: unknown, filename: string, mimeType = 'application/zip') {
+  /**
+   * Downloads a file and SAVES it to the phone's Downloads/Designo folder (no share sheet).
+   * Falls back to the share sheet only on Android 9 and older, where direct saving isn't possible.
+   * Resolves to where it went: { saved: true, uri } or { saved: false } (shared).
+   */
+  async download(method: 'GET' | 'POST', path: string, body: unknown, filename: string, mimeType = 'application/zip'): Promise<{ saved: boolean; uri?: string; name: string }> {
     const token = await idToken();
-    const target = `${FileSystem.cacheDirectory}${filename.replace(/[^a-z0-9._-]/gi, '_')}`;
-    if (method === 'GET') {
-      const r = await FileSystem.downloadAsync(`${apiUrl}/api${path}`, target, { headers: token ? { authorization: `Bearer ${token}` } : {} });
-      if (r.status >= 400) {
-        const txt = await FileSystem.readAsStringAsync(target).catch(() => '');
-        await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => undefined);
-        let j: any = {}; try { j = JSON.parse(txt); } catch { /* not JSON */ }
-        throw new ApiError(r.status, j?.error?.code ?? 'DOWNLOAD_FAILED', j?.error?.message ?? 'Download failed', j?.error?.action);
+    const name = filename.replace(/[^a-z0-9._-]+/gi, '_').replace(/_+/g, '_');
+    const target = `${FileSystem.cacheDirectory}${Date.now()}-${name}`;
+    trackStart();
+    try {
+      if (method === 'GET') {
+        const r = await FileSystem.downloadAsync(`${apiUrl}/api${path}`, target, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+        if (r.status >= 400) {
+          const txt = await FileSystem.readAsStringAsync(target).catch(() => '');
+          await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => undefined);
+          let j: any = {}; try { j = JSON.parse(txt); } catch { /* not JSON */ }
+          throw new ApiError(r.status, j?.error?.code ?? 'DOWNLOAD_FAILED', j?.error?.message ?? 'Download failed', j?.error?.action);
+        }
+      } else {
+        const res = await fetch(`${apiUrl}/api${path}`, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+        if (!res.ok) { const j = await res.json().catch(() => ({})); throw new ApiError(res.status, j?.error?.code ?? 'EXPORT_FAILED', j?.error?.message ?? 'Export failed', j?.error?.action); }
+        const buf = await res.arrayBuffer();
+        await FileSystem.writeAsStringAsync(target, toBase64(new Uint8Array(buf)), { encoding: FileSystem.EncodingType.Base64 });
       }
-    } else {
-      const res = await fetch(`${apiUrl}/api${path}`, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
-      if (!res.ok) { const j = await res.json().catch(() => ({})); throw new ApiError(res.status, j?.error?.code ?? 'EXPORT_FAILED', j?.error?.message ?? 'Export failed', j?.error?.action); }
-      const buf = await res.arrayBuffer();
-      await FileSystem.writeAsStringAsync(target, toBase64(new Uint8Array(buf)), { encoding: FileSystem.EncodingType.Base64 });
+    } finally { trackEnd(); }
+    if (Power?.saveToDownloads) {
+      try {
+        const uri = await Power.saveToDownloads(target, name, mimeType);
+        FileSystem.deleteAsync(target, { idempotent: true }).catch(() => undefined);
+        return { saved: true, uri, name };
+      } catch { /* Android 9 or older → share sheet below */ }
     }
-    if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target, { mimeType, dialogTitle: filename });
-    return target;
+    if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target, { mimeType, dialogTitle: name });
+    return { saved: false, name };
+  },
+  /** Older call sites: same as download(). */
+  async downloadAndShare(method: 'GET' | 'POST', path: string, body: unknown, filename: string, mimeType = 'application/zip') {
+    return api.download(method, path, body, filename, mimeType);
   },
 };
 

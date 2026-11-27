@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { showAlert, toast } from '../../components/Dialog';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { Smartphone, Tablet, Monitor, Wand2, Shuffle, Sparkles, History, Download, ClipboardCheck, CheckCircle2, XCircle, X, Lock, Maximize2, Image as ImageIcon, FileCode2 } from 'lucide-react-native';
+import { Smartphone, Tablet, Monitor, Wand2, Shuffle, Sparkles, History, Download, ClipboardCheck, CheckCircle2, XCircle, X, Lock, Maximize2, FileText, Info, Play, Pencil } from 'lucide-react-native';
 import { api, newKey, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useApi, useJob, timeAgo } from '../../lib/hooks';
@@ -12,8 +12,9 @@ import type { Job, Project, Version } from '../../lib/types';
 import { HtmlPreview } from '../../components/HtmlPreview';
 import { JobCard } from '../../components/JobCard';
 import { Badge, Button, Card, Chip, ErrorBox, Field, Label, Row, T } from '../../components/ui';
-import { Animated, AnimatedProgress, Appear, CountUp, Float, PressScale, SkeletonList, Swap, popIn } from '../../components/motion';
+import { Animated, AnimatedProgress, CountUp, Float, PressScale, SkeletonList, Swap, popIn } from '../../components/motion';
 import { Logo } from '../../components/Logo';
+import { DownloadOptions, DownloadSheet } from '../../components/DownloadOptions';
 import { FadeInDown, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 /** Segmented device switch with a sliding highlight. */
@@ -38,7 +39,32 @@ function DeviceSwitch({ device, onChange }: { device: 'MOBILE' | 'TABLET' | 'DES
 }
 
 type Tab = 'ai' | 'versions' | 'audit' | 'export';
-const SRC: Record<string, string> = { stitch_generate: 'Generated', stitch_edit: 'AI edit', stitch_variant: 'Variant', manual_edit: 'Manual', improve: 'Improved', template: 'Template' };
+const SRC: Record<string, string> = { stitch_generate: 'Generated', stitch_edit: 'AI edit', stitch_variant: 'Variant', manual_edit: 'Manual', improve: 'Improved', template: 'Template', logo: 'Logo' };
+/** Prompts like "create an order page" belong in "Add page", not in an edit of the current page. */
+const NEW_PAGE_RE = /\b(create|add|make|build|new)\b[^.]{0,40}\b(page|screen)\b/i;
+const scoreTone = (n: number) => (n >= 85 ? 'green' : n >= 60 ? 'amber' : 'red') as 'green' | 'amber' | 'red';
+
+/** Plain-language explanation of what the Audit tab does. */
+function AuditHelp() {
+  const c = useColors();
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ backgroundColor: c.card2, borderRadius: 12, padding: 10, gap: 6 }}>
+      <PressScale onPress={() => setOpen((o) => !o)} accessibilityLabel="What is the audit?">
+        <Row><Info size={15} color={c.primary} /><T size={13} weight="600" style={{ flex: 1 }}>What does Audit do?</T><T muted size={12}>{open ? 'Hide' : 'Show'}</T></Row>
+      </PressScale>
+      {open && (
+        <View style={{ gap: 4 }}>
+          <T size={12} muted>Audit automatically checks the code of this page for common quality and accessibility problems: headings, image descriptions for blind users, tiny text, colour contrast, spacing and labelled buttons and fields.</T>
+          <T size={12} muted>• The score is the share of checks passed (100 = all passed).</T>
+          <T size={12} muted>• Red = important problem, orange = minor, green = passed.</T>
+          <T size={12} muted>• It is free and does not change your design. Use “Fix these with AI” to let Stitch improve the page (3 credits).</T>
+          <T size={12} muted>• Each version keeps its own score, so you can compare versions in the Versions tab.</T>
+        </View>
+      )}
+    </View>
+  );
+}
 
 export default function ProjectScreen() {
   const { id, job: initialJob } = useLocalSearchParams<{ id: string; job?: string }>();
@@ -57,8 +83,11 @@ export default function ProjectScreen() {
   const [vkey, setVkey] = useState(0);
   const [viewing, setViewing] = useState<Version | null>(null);
   const [newPage, setNewPage] = useState('');
+  const [dlOpen, setDlOpen] = useState(false);
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const page = project?.pages.find((p) => p.id === pageId);
   const isOwner = project?.access === 'owner';
+  const designedCount = project?.pages.filter((x) => x.currentVersionId).length ?? 0;
 
   const load = useCallback(async () => {
     try {
@@ -110,17 +139,13 @@ export default function ProjectScreen() {
   const restore = async (vid: string) => {
     try { await api.post(`/versions/${vid}/restore`); setViewing(null); await load(); setVkey((k) => k + 1); toast('Version restored'); } catch (e) { showAlert('Error', (e as Error).message); }
   };
-  const doExport = async (format: 'html' | 'react') => {
-    setBusy(format); setErr(null);
-    try { await api.downloadAndShare('POST', `/projects/${id}/export`, { format, idempotencyKey: newKey() }, `${project?.name ?? 'export'}-${format}.zip`); refresh(); }
-    catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
-  };
-  const downloadOne = async (format: 'png' | 'html') => {
-    if (!version) return;
-    setBusy(format); setErr(null);
-    const base = `${project?.name ?? 'design'}-${page?.name ?? 'screen'}`.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-    try { await api.downloadAndShare('GET', `/versions/${version.id}/download?format=${format}`, null, `${base}.${format}`, format === 'png' ? 'image/png' : 'text/html'); }
-    catch (e) { setErr(e as ApiError); } finally { setBusy(null); }
+  const saveRename = async () => {
+    if (!renaming || !renaming.name.trim()) return;
+    setBusy('rename');
+    try {
+      await api.patch(`/projects/${id}/pages/${renaming.id}`, { name: renaming.name.trim() });
+      setRenaming(null); await load(); setVkey((k) => k + 1); toast('Screen renamed');
+    } catch (e) { showAlert('Could not rename', (e as Error).message, undefined, 'error'); } finally { setBusy(null); }
   };
   const reaudit = async () => {
     if (!version) return;
@@ -132,14 +157,33 @@ export default function ProjectScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: project.name }} />
+      <Stack.Screen options={{
+        title: project.name,
+        headerRight: () => (
+          <Row gap={4}>
+            <PressScale onPress={() => router.push(`/play/${id}${pageId ? `?page=${pageId}` : ''}`)} disabled={!designedCount} accessibilityLabel="Play the app" style={{ padding: 8, borderRadius: 12 }}><Play size={20} color={designedCount ? c.primary : c.muted} fill={designedCount ? c.primary : 'transparent'} /></PressScale>
+            <PressScale onPress={() => setDlOpen(true)} accessibilityLabel="Download" style={{ padding: 8, borderRadius: 12 }}><Download size={20} color={c.text} /></PressScale>
+          </Row>
+        ),
+      }} />
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
-        {project.pages.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>{project.pages.map((p) => <Chip key={p.id} label={p.name + (p.currentVersionId ? '' : ' (empty)')} active={p.id === pageId} onPress={() => setPageId(p.id)} />)}</ScrollView>}
+        <Row gap={6}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ gap: 6 }}>{project.pages.map((p) => <Chip key={p.id} label={p.name + (p.currentVersionId ? '' : ' (empty)')} active={p.id === pageId} onPress={() => setPageId(p.id)} />)}</ScrollView>
+          {page && project.access !== 'viewer' && (
+            <PressScale onPress={() => setRenaming({ id: page.id, name: page.name })} accessibilityLabel={`Rename ${page.name}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 12, backgroundColor: c.card, borderWidth: 1, borderColor: c.border }}>
+              <Pencil size={14} color={c.text} /><T size={12} weight="600">Rename</T>
+            </PressScale>
+          )}
+        </Row>
         <Row>
           <View style={{ flex: 1 }}><DeviceSwitch device={device} onChange={setDevice} /></View>
+          <PressScale onPress={() => router.push(`/play/${id}${pageId ? `?page=${pageId}` : ''}`)} disabled={!designedCount} accessibilityLabel="Play the app"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: designedCount ? c.primary : c.card }}>
+            <Play size={15} color={designedCount ? '#fff' : c.muted} fill={designedCount ? '#fff' : 'transparent'} /><T size={13} weight="600" style={{ color: designedCount ? '#fff' : c.muted }}>Play</T>
+          </PressScale>
           <PressScale onPress={() => router.push(`/preview/${id}${pageId ? `?page=${pageId}` : ''}`)} disabled={!version} accessibilityLabel="Open full-screen preview"
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: version ? c.primary : c.card }}>
-            <Maximize2 size={16} color={version ? '#fff' : c.muted} /><T size={13} weight="600" style={{ color: version ? '#fff' : c.muted }}>Full screen</T>
+            style={{ padding: 10, borderRadius: 12, backgroundColor: c.card, borderWidth: 1, borderColor: c.border }}>
+            <Maximize2 size={16} color={version ? c.text : c.muted} />
           </PressScale>
         </Row>
         {version ? <Animated.View key={version.id} entering={FadeInDown.springify().damping(18)}><HtmlPreview html={version.html} device={device} /></Animated.View> : (
@@ -163,6 +207,12 @@ export default function ProjectScreen() {
             {isOwner && !stitchOk && <ErrorBox error={Object.assign(new Error('Connect your Stitch account to use AI edits.'), { action: 'open_integrations' }) as any} />}
             <Label>{page?.currentVersionId ? 'Describe a change' : 'Describe this page'}</Label>
             <Field multiline value={prompt} onChangeText={setPrompt} maxLength={4000} style={{ minHeight: 100 }} editable={isOwner && !running} placeholder="e.g. Make the header sticky and add a search bar" />
+            {isOwner && !!page?.currentVersionId && NEW_PAGE_RE.test(prompt) && (
+              <View style={{ backgroundColor: c.primary + '1f', borderRadius: 12, padding: 10, gap: 8 }}>
+                <T size={12}>“Apply edit” changes the <T size={12} weight="700">{page.name}</T> page. Want a separate new page instead?</T>
+                <Button small variant="secondary" title="Make it a new page" onPress={() => { const m = prompt.match(/\b(?:create|add|make|build|new)\b\s+(?:an?\s+|the\s+)?(?:new\s+)?(.{2,30}?)\s+(?:page|screen)\b/i); setNewPage((m?.[1] ?? 'New').replace(/^\w/, (x) => x.toUpperCase())); }} />
+              </View>
+            )}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>{['More premium & spacious', 'Improve hierarchy', 'Dark theme', 'Bigger buttons', 'Better mobile layout'].map((s) => <Chip key={s} label={s} onPress={() => setPrompt(s)} />)}</ScrollView>
             {page?.currentVersionId ? (<>
               <Button title="Apply edit · 2 cr" icon={<Wand2 color="#fff" size={18} />} loading={busy === 'edit'} disabled={!isOwner || !stitchOk || !!running || prompt.trim().length < 3} onPress={() => run('edit', { prompt, pageId }, 'edit')} />
@@ -174,7 +224,7 @@ export default function ProjectScreen() {
             {isOwner && !!page?.currentVersionId && (
               <Row>
                 <Field value={newPage} onChangeText={setNewPage} placeholder="New page name (e.g. About)" maxLength={40} style={{ flex: 1 }} />
-                <Button small variant="secondary" title="Add page" disabled={!!running || !stitchOk || newPage.trim().length < 2} onPress={() => { const n = newPage.trim(); setNewPage(''); run('generate', { prompt: `Create the "${n}" page. Match the visual style, colours, typography and navigation of the "${project.pages[0]?.name}" page.`, newPageName: n }, 'gen'); }} />
+                <Button small variant="secondary" title="Add page" disabled={!!running || !stitchOk || newPage.trim().length < 2} onPress={() => { const n = newPage.trim(); const extra = prompt.trim(); setNewPage(''); run('generate', { prompt: `Create the "${n}" page.${extra ? ` What it should contain: ${extra}.` : ''} Match the visual style, colours, typography and navigation of the "${project.pages[0]?.name}" page.`, newPageName: n }, 'gen'); }} />
               </Row>
             )}
           </Card>
@@ -182,50 +232,87 @@ export default function ProjectScreen() {
 
         {tab === 'versions' && (<Swap id="versions">
           <View style={{ gap: 8 }}>
+            {page && (
+              <Row style={{ paddingHorizontal: 2 }}>
+                <FileText size={16} color={c.primary} />
+                <T weight="700" style={{ flex: 1 }} numberOfLines={1}>{page.name}</T>
+                <T muted size={12}>{versions.data?.versions.length ? `${versions.data.versions.length} version${versions.data.versions.length > 1 ? 's' : ''}` : ''}</T>
+              </Row>
+            )}
+            {project.pages.length > 1 && <T muted size={12} style={{ paddingHorizontal: 2 }}>Showing the history of this page. Pick another page at the top to see its versions.</T>}
             {versions.loading && !versions.data && <SkeletonList rows={3} />}
-            {versions.data?.versions.map((v, i) => (
-              <Card key={v.id} index={i} style={{ gap: 6, borderColor: v.id === page?.currentVersionId ? c.primary : c.border }}>
-                <Row><Badge label={SRC[v.source] ?? v.source} tone={v.id === page?.currentVersionId ? 'primary' : 'neutral'} />{v.audit && <T size={13} weight="600">{v.audit.score}</T>}<T muted size={12} style={{ marginLeft: 'auto' }}>{timeAgo(v.createdAt)}</T></Row>
-                {v.prompt && <T muted size={13} numberOfLines={2}>{v.prompt}</T>}
-                <Row>
-                  <Button small variant="secondary" title="Preview" onPress={async () => setViewing((await api.get<{ version: Version }>(`/versions/${v.id}`)).version)} />
-                  {v.id !== page?.currentVersionId && project.access !== 'viewer' && <Button small title={v.source === 'stitch_variant' ? 'Use' : 'Restore'} onPress={() => restore(v.id)} />}
-                </Row>
-              </Card>
-            ))}
-            {!versions.data?.versions.length && <T muted>No versions yet.</T>}
+            {(() => {
+              const list = versions.data?.versions ?? [];
+              const num = new Map(list.map((v, i) => [v.id, list.length - i]));
+              return list.map((v) => {
+                const current = v.id === page?.currentVersionId;
+                const restoredFrom = v.prompt?.match(/^Restored (v_[A-Za-z0-9]+)/)?.[1];
+                const desc = restoredFrom ? `Restored from version ${num.get(restoredFrom) ?? 'earlier'}` : v.prompt;
+                return (
+                  <Card key={v.id} style={{ gap: 6, borderColor: current ? c.primary : c.border }}>
+                    <Row>
+                      <T weight="700" size={15} numberOfLines={1} style={{ flexShrink: 1 }}>{page?.name ?? 'Page'} · Version {num.get(v.id)}</T>
+                      {current && <Badge label="Current" tone="primary" />}
+                      <T muted size={12} style={{ marginLeft: 'auto' }}>{timeAgo(v.createdAt)}</T>
+                    </Row>
+                    <Row gap={6}>
+                      <Badge label={SRC[v.source] ?? v.source} />
+                      {v.audit && <Badge label={`Audit ${v.audit.score}/100`} tone={scoreTone(v.audit.score)} />}
+                    </Row>
+                    {!!desc && <T muted size={13} numberOfLines={2}>{desc}</T>}
+                    <Row>
+                      <Button small variant="secondary" title="Preview" onPress={async () => setViewing((await api.get<{ version: Version }>(`/versions/${v.id}`)).version)} />
+                      {!current && project.access !== 'viewer' && <Button small title={v.source === 'stitch_variant' ? 'Use' : 'Restore'} onPress={() => restore(v.id)} />}
+                    </Row>
+                  </Card>
+                );
+              });
+            })()}
+            {!versions.data?.versions.length && !versions.loading && <T muted>No versions yet.</T>}
           </View>
         </Swap>)}
 
         {tab === 'audit' && (<Swap id="audit">
           <Card style={{ gap: 8 }}>
             {version?.audit ? (<>
-              <Row><Animated.View entering={popIn}><CountUp value={version.audit.score} style={{ color: c.text, fontSize: 28, fontWeight: '800' }} /></Animated.View><View style={{ flex: 1 }}><T weight="600">Designo heuristic score</T><T muted size={12}>Share of automated checks passed — a checklist, not an objective rating.</T></View></Row>
-              {[...version.audit.checks].sort((a, b) => Number(a.passed) - Number(b.passed)).map((ck, i) => (
-                <Appear key={ck.id} index={i}><Row style={{ alignItems: 'flex-start' }}>{ck.passed ? <CheckCircle2 size={16} color={c.green} /> : <XCircle size={16} color={ck.severity === 'high' ? c.red : c.amber} />}<View style={{ flex: 1 }}><T size={13}>{ck.label}</T>{!ck.passed && <T muted size={12}>{ck.detail}</T>}</View></Row></Appear>
+              <Row><Animated.View entering={popIn}><CountUp value={version.audit.score} style={{ color: c[scoreTone(version.audit.score)], fontSize: 28, fontWeight: '800' }} /></Animated.View><View style={{ flex: 1 }}><T weight="600">Quality score{page ? ` · ${page.name}` : ''}</T><T muted size={12}>{version.audit.checks.filter((x) => x.passed).length} of {version.audit.checks.length} checks passed (out of 100).</T></View></Row>
+              <AuditHelp />
+              {[...version.audit.checks].sort((a, b) => Number(a.passed) - Number(b.passed)).map((ck) => (
+                <View key={ck.id}><Row style={{ alignItems: 'flex-start' }}>{ck.passed ? <CheckCircle2 size={16} color={c.green} /> : <XCircle size={16} color={ck.severity === 'high' ? c.red : c.amber} />}<View style={{ flex: 1 }}><T size={13}>{ck.label}</T>{!ck.passed && <T muted size={12}>{ck.detail}</T>}</View></Row></View>
               ))}
+              {version.audit.checks.some((x) => !x.passed) && isOwner && (
+                <Button small title="Fix these with AI · 3 cr" icon={<Sparkles size={16} color="#fff" />} loading={busy === 'imp'} disabled={!stitchOk || !!running}
+                  onPress={() => run('improve', { pageId, instructions: `Fix these audit problems: ${version.audit!.checks.filter((x) => !x.passed).map((x) => x.label).join('; ')}`, autoIterate: false, maxIterations: 1 }, 'imp')} />
+              )}
               <Button small variant="secondary" title="Re-run audit (free)" onPress={reaudit} />
-            </>) : <Button small variant="secondary" title="Run audit (free)" disabled={!version} onPress={reaudit} />}
+            </>) : (<>
+              <AuditHelp />
+              <Button small variant="secondary" title="Run audit (free)" disabled={!version} onPress={reaudit} />
+            </>)}
           </Card>
         </Swap>)}
 
         {tab === 'export' && (<Swap id="export">
           <Card style={{ gap: 12 }}>
-            <T weight="600">This page{page ? ` · ${page.name}` : ''}</T>
-            <Row>
-              <Button style={{ flex: 1 }} small variant="secondary" title="Screenshot PNG" icon={<ImageIcon size={16} color={c.text} />} loading={busy === 'png'} disabled={!version?.imageUrl} onPress={() => downloadOne('png')} />
-              <Button style={{ flex: 1 }} small variant="secondary" title=".html file" icon={<FileCode2 size={16} color={c.text} />} loading={busy === 'html'} disabled={!version} onPress={() => downloadOne('html')} />
-            </Row>
-            <T muted size={11}>Free. Single-page downloads open in Android's share sheet.</T>
-            <T weight="600">Whole project{project.pages.filter((x) => x.currentVersionId).length > 1 ? ` · ${project.pages.filter((x) => x.currentVersionId).length} screens` : ''}</T>
-            <T muted size={13}>Exports are validated first; you're only charged if the build check passes. The ZIP opens in Android's share sheet (save to Files, Drive, email…).</T>
-            <Button title="HTML / CSS / JS · 1 cr" icon={<Download color="#fff" size={18} />} loading={busy === 'html'} disabled={!version} onPress={() => doExport('html')} />
-            <Button variant="secondary" title={`React + TypeScript · 2 cr${me?.plan.features.includes('react_export') ? '' : ' 🔒'}`} loading={busy === 'react'} disabled={!version || !me?.plan.features.includes('react_export')} onPress={() => doExport('react')} />
-            <T muted size={11}>No Figma export — there's no reliable public API for it.</T>
+            <DownloadOptions project={project} pageName={page?.name} version={version} />
           </Card>
         </Swap>)}
       </ScrollView>
 
+      <DownloadSheet visible={dlOpen} onClose={() => setDlOpen(false)} project={project} pageName={page?.name} version={version} />
+      <Modal visible={!!renaming} transparent animationType="fade" onRequestClose={() => setRenaming(null)}>
+        <Pressable onPress={() => setRenaming(null)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: 24 }}>
+          <Pressable onPress={() => undefined} style={{ backgroundColor: c.card, borderRadius: 20, padding: 16, gap: 12, borderWidth: 1, borderColor: c.border }}>
+            <T weight="700" size={17}>Rename screen</T>
+            <Field autoFocus value={renaming?.name ?? ''} onChangeText={(t) => setRenaming((r) => (r ? { ...r, name: t } : r))} maxLength={60} placeholder="e.g. Order history" onSubmitEditing={() => saveRename()} returnKeyType="done" />
+            <T muted size={12}>Screen names are used for the Play mode buttons, file names in downloads and the Versions list.</T>
+            <Row style={{ justifyContent: 'flex-end' }}>
+              <Button small variant="ghost" title="Cancel" onPress={() => setRenaming(null)} />
+              <Button small title="Save" disabled={!renaming?.name.trim()} loading={busy === 'rename'} onPress={() => saveRename()} />
+            </Row>
+          </Pressable>
+        </Pressable>
+      </Modal>
       <Modal visible={!!viewing} animationType="slide" onRequestClose={() => setViewing(null)}>
         <View style={{ flex: 1, backgroundColor: c.bg, padding: 16, gap: 12 }}>
           <Row style={{ justifyContent: 'space-between', marginTop: 24 }}><T weight="700" size={18}>Version preview</T><Pressable onPress={() => setViewing(null)} accessibilityLabel="Close"><X color={c.text} /></Pressable></Row>

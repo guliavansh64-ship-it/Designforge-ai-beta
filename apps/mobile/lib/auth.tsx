@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { GoogleAuthProvider, onIdTokenChanged, signInWithCredential, signOut, type User } from 'firebase/auth';
 import { fbAuth, firebaseConfigured } from './firebase';
-import { api, ApiError, clearApiCache, loadApiUrlOverride } from './api';
+import { api, ApiError, cacheHydrated, loadApiUrlOverride, wipeApiCache } from './api';
 import { registerForPush, unregisterPush } from './push';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Me } from './types';
@@ -38,7 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!firebaseConfigured) { setLoading(false); setError('App is not configured (Firebase env missing).'); return; }
     let unsub: (() => void) | undefined; let alive = true;
     // 1) Show the cached profile immediately (signed-in users see the app in well under a second).
-    AsyncStorage.getItem(ME_CACHE).then((raw) => {
+    // The saved API cache is loaded first, so the first screens paint with data instead of spinners.
+    Promise.all([AsyncStorage.getItem(ME_CACHE), cacheHydrated]).then(([raw]) => {
       if (!alive || !raw) return;
       try { setMe((cur) => cur ?? (JSON.parse(raw) as Me)); setLoading(false); } catch { /* ignore */ }
     }).catch(() => undefined);
@@ -49,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!alive) return;
       unsub = onIdTokenChanged(fbAuth(), async (u) => {
         setUser(u);
-        if (!u) { setMe(null); saveMe(null); setLoading(false); return; }
+        if (!u) { setMe(null); saveMe(null); wipeApiCache(); setLoading(false); return; }
         const hadCache = !!(await AsyncStorage.getItem(ME_CACHE).catch(() => null));
         if (hadCache) { setLoading(false); refresh().then(() => registerForPush({ prompt: false }).catch(() => undefined)); }
         else { await refresh(); setLoading(false); registerForPush({ prompt: false }).catch(() => undefined); }
@@ -75,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await unregisterPush().catch(() => undefined);
     await GoogleSignin.signOut().catch(() => undefined);
     await signOut(fbAuth());
-    clearApiCache();
+    wipeApiCache();
     saveMe(null);
     setMe(null);
   };

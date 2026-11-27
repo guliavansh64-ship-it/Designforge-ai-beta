@@ -84,7 +84,7 @@ Render only runs the code you last pushed. If the app shows
 2. In Render, open **designforge-api → Manual Deploy → Clear build cache & deploy**.
 3. Open `https://<your-service>.onrender.com/health`. It must show:
    ```json
-   { "ok": true, "build": "2026-11-28", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
+   { "ok": true, "build": "2026-12-04", "stitchModels": ["GEMINI_3_8_FLASH", "GEMINI_3_5_FLASH_LITE"] }
    ```
    If `build` is missing, the old code is still running.
 4. Optional: run a real end-to-end Stitch check from your PC. This uses 1 generation of *your* Stitch quota and deletes its test project afterwards:
@@ -234,3 +234,53 @@ Redeploy the API, then check that `GET /health` shows `"build":"2026-12-03"`.
   - The in-memory test database now rejects `undefined` like real Firestore. New end-to-end test: `test/logo-job.test.ts`.
 - **About Stitch and logos:** the Stitch API has no image or logo tool, only screen generation (`generate_screen_from_text`) plus screen HTML and screenshots. Logo Studio therefore asks Stitch to design a screen that contains only the logo on a white canvas, then crops Stitch's own rendering (`cropToLogo`).
 - **Bottom bar** uses the theme colours: card-coloured body, brand gradient border (`primary → #a855f7 → ember`), brand-gradient + button, `primary` for the active tab and `muted` for inactive tabs. It supports light and dark mode.
+
+## Build 2026-12-04: full-page logo viewer and "Change this logo"
+
+Redeploy the API, then check that `GET /health` shows `"build":"2026-12-04"`. Install the new APK.
+
+- **Logo Studio:** the "Logos are designed by Google Stitch…" info card is gone. Concepts are shown as large cards; tapping one opens the new full-page viewer (`app/logo-view/[id].tsx`).
+- **Full-page viewer:**
+  - Large preview with Light / Transparent (checkerboard) / Dark / White backgrounds.
+  - Previous/next arrows and thumbnails to switch between concepts.
+  - Palette, typography, Download brand kit, and Save PNG for the selected background.
+  - **Change this logo:** type a change (or tap an idea chip) and press *Change logo · 2 cr*.
+  - **Previous versions:** older versions of a concept can be brought back with *Use*.
+- **API:** `POST /api/versions/:vid/logo-edit` `{ instruction, idempotencyKey }` queues a `logo` job with `payload.editOf`.
+  - It costs 2 credits, the same as a design edit, and requires the `logo_studio` feature and a Stitch connection.
+  - `runLogoEdit` asks Stitch to edit that concept's own screen. Older concepts without a screen ID are redesigned from their original brief plus the change.
+  - The result is cropped, split into light/transparent/dark/white files, and saved as the new head of the same concept page, so the other concepts are untouched.
+  - `POST /versions/:vid/restore` keeps `source: 'logo'` and the logo files, so restored logos still work in Logo Studio and the brand kit.
+- **Dark variant fix:** a mostly dark logo was almost invisible on the dark preview. `darkPreview()` now measures the logo's brightness and uses the white version on dark backgrounds when needed. Existing logos were back-filled (`logo.darkFixed`).
+- Tests: 96 (new: change-logo job and dark-preview contrast in `test/logo-job.test.ts`).
+- **Project screen (app only):**
+  - Versions now show the page name and a number ("Home · Version 3"), a **Current** badge, the type (Generated / AI edit / Variant / Manual / Improved), and a colour-coded **Audit NN/100** badge.
+  - Restored versions read "Restored from version N" instead of an internal ID.
+  - The Audit tab has a "What does Audit do?" explainer and a **Fix these with AI · 3 cr** button, which runs Improve with the failed checks as instructions.
+  - In AI edit, prompts like "Create order page" show a hint that Apply edit changes the *current* page, with **Make it a new page**. That fills in the page name, and Add page includes the typed details.
+
+## Build 2026-12-06: Play mode, downloads to the phone, rename screens, always-awake server
+
+Redeploy the API, then check that `GET /health` shows `"build":"2026-12-06"`. Install the new APK.
+
+- **Play (clickable prototype):** project screen → **Play** (or ▶ in the top-right corner) opens `app/play/[id].tsx`.
+  - Every screen's real HTML runs in a WebView; nothing is an image.
+  - A small injected script reports taps on links, buttons, tabs and menu items. `lib/prototype.ts` (`resolveTap`) opens the screen whose name best matches the tapped text, icon name or aria-label. It uses synonyms: cart = basket = shopping_cart, profile = account = person, and so on.
+  - Back arrows go back, and the Android back button walks the history.
+  - Visited screens stay loaded, so switching back is instant.
+  - Use the screen picker to jump; use Restart to start again from the first screen.
+  - Taps with no matching screen show "No screen for "X" yet".
+- **Download button (top-right) + Export tab:** one list.
+  - This screen: PNG and HTML, both free.
+  - All screens: screenshots ZIP (free, new `GET /api/projects/:id/screenshots`), HTML/CSS/JS ZIP (1 cr) and React + TypeScript ZIP (2 cr).
+  - Exports the plan doesn't include show a lock and open Plans instead.
+- **Downloads are saved, not shared:** the native module `designo-power.saveToDownloads` writes to **Downloads/Designo** through MediaStore (Android 10+, no permission needed). After saving, an "Open" option appears. The share sheet is only used on Android 9 and older.
+- **Rename screen:** a **Rename** button next to the screen chips uses `PATCH /projects/:id/pages/:pageId`.
+- **No more "Waking up the server…":**
+  - The API now pings itself every 4 minutes **all the time** (`startKeepAwake`, disable with `KEEP_AWAKE=0`), so Render's free plan never sleeps.
+  - Backup: `.github/workflows/keep-awake.yml` pings `/health` every 10 minutes from GitHub.
+  - The app pings `/health` the moment it opens, and the GET cache is saved on the phone, so screens show instantly while fresh data loads.
+  - Note: one always-on free service uses ~744 of Render's 750 free hours per month. A second free service would run out. A paid instance never sleeps.
+- **Complete app = 5 cr per screen, all or nothing:** Studio shows "5 cr / screen · you can make up to N screens", and Generate is disabled with a "Get credits" link when you have fewer than 5 credits. The server plans only as many screens as the balance covers, then **reserves every screen up front**. If the balance can't cover them all, nothing is generated, nothing is charged, and the error says how many screens the balance allows. Screens that fail or are skipped are refunded.
+- **Smoother UI:** Version cards and Audit rows no longer overlap. The saved data cache loads before the first screen is drawn.
+- **Improve a design:** choose which **screen** of a project to improve; same-named projects show the screen count and date. The explanation text was rewritten.

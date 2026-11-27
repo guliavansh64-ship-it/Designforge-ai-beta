@@ -177,7 +177,10 @@ projectsRouter.get('/versions/:vid', ah(async (req, res) => res.json({ version: 
 projectsRouter.post('/versions/:vid/restore', ah(async (req, res) => {
   const v = await getVersion(req.params.vid, req.user!.uid);
   await loadProject(v.projectId, req.user!.uid, 'editor');
-  const nv = await createVersion({ projectId: v.projectId, ownerId: v.ownerId, pageId: v.pageId, parentVersionId: v.id, source: v.source === 'stitch_variant' ? 'stitch_variant' : 'manual_edit', prompt: `Restored ${v.id}`, html: v.html, imageUrl: v.imageUrl, stitchScreenId: v.stitchScreenId, audit: v.audit });
+  const nv = await createVersion({ projectId: v.projectId, ownerId: v.ownerId, pageId: v.pageId, parentVersionId: v.id, source: v.source === 'stitch_variant' ? 'stitch_variant' : v.source === 'logo' ? 'logo' : 'manual_edit', prompt: v.source === 'logo' ? (v.prompt ?? '') : `Restored ${v.id}`, html: v.html, imageUrl: v.imageUrl, stitchScreenId: v.stitchScreenId, audit: v.audit });
+  // Logo concepts keep their files/palette so the restored logo still works in Logo Studio and the brand kit.
+  const logo = (v as { logo?: unknown }).logo;
+  if (v.source === 'logo' && logo) { await db().collection(C.versions).doc(nv.id).update({ logo }); (nv as { logo?: unknown }).logo = logo; }
   res.json({ version: nv });
 }));
 

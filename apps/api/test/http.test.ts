@@ -20,7 +20,7 @@ describe('HTTP security', () => {
   it('strips any operator Stitch key from the environment at boot', () => {
     expect(process.env.STITCH_API_KEY).toBeUndefined();
   });
-  it.each(['/api/me', '/api/projects', '/api/connections', '/api/admin/stats', '/api/billing/summary'])('%s requires auth', async (path) => {
+  it.each(['/api/me', '/api/projects', '/api/connections', '/api/admin/stats', '/api/billing/summary', '/api/projects/p_1/screenshots'])('%s requires auth', async (path) => {
     const r = await request(app).get(path);
     expect(r.status).toBe(401);
     expect(r.body.error.code).toBe('UNAUTHENTICATED');

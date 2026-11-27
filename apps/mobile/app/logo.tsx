@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
-import { showAlert } from '../components/Dialog';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, ScrollView, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { PenTool, Download, Info } from 'lucide-react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { PenTool, Maximize2, Wand2 } from 'lucide-react-native';
 import { api, assetUrl, newKey, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useJob } from '../lib/hooks';
@@ -11,14 +10,17 @@ import type { Project, Version } from '../lib/types';
 import { JobCard } from '../components/JobCard';
 import { Button, Card, Chip, ErrorBox, Field, Label, Row, T } from '../components/ui';
 import { Animated, PressScale, Skeleton, popIn } from '../components/motion';
-import { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { FadeIn } from 'react-native-reanimated';
 
 const STYLES = ['Minimalist', 'Modern', 'Wordmark', 'Icon', 'Emblem', 'Abstract'];
 
-function AssetImage({ url, size }: { url?: string; size: number }) {
+function AssetImage({ url, size, fill }: { url?: string; size: number; fill?: boolean }) {
   const [uri, setUri] = useState<string>();
   useEffect(() => { assetUrl(url).then(setUri); }, [url]);
-  return uri ? <Animated.View entering={FadeIn.duration(300)}><Image source={{ uri }} style={{ width: size, height: size, borderRadius: 12, backgroundColor: '#fff' }} resizeMode="contain" accessibilityLabel="Logo concept" /></Animated.View> : <Skeleton width={size} height={size} radius={12} />;
+  const box = fill ? { width: '100%' as const, aspectRatio: 1 } : { width: size, height: size };
+  return uri
+    ? <Animated.View entering={FadeIn.duration(300)}><Image source={{ uri }} style={{ ...box, borderRadius: 12, backgroundColor: '#fff' }} resizeMode="contain" accessibilityLabel="Logo concept" /></Animated.View>
+    : <View style={{ ...box, borderRadius: 12, overflow: 'hidden' }}><Skeleton height={fill ? 400 : size} radius={12} /></View>;
 }
 
 export default function Logo() {
@@ -33,7 +35,6 @@ export default function Logo() {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState<ApiError | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [concepts, setConcepts] = useState<Version[]>([]);
-  const [active, setActive] = useState<Version | null>(null);
   const stitch = me?.connections.find((x) => x.provider === 'stitch');
   const allowed = me?.plan.features.includes('logo_studio');
 
@@ -41,11 +42,14 @@ export default function Logo() {
     const [{ project }, { versions }] = await Promise.all([api.get<{ project: Project }>(`/projects/${p}`), api.get<{ versions: Version[] }>(`/projects/${p}/versions?limit=50`)]);
     const heads = new Set(project.pages.map((x) => x.currentVersionId));
     const list = versions.filter((v) => v.source === 'logo' && heads.has(v.id));
-    setConcepts(list); setActive((a) => a ?? list[0] ?? null);
+    setConcepts(list);
     if (!brand) setBrand(project.name.replace(/ brand$/i, ''));
   };
   useEffect(() => { if (pid) load(pid).catch((e) => setErr(e)); /* eslint-disable-next-line */ }, [pid]);
-  const job = useJob(jobId, (j) => { refresh(); if (j.status === 'succeeded' && pid) load(pid); });
+  // Coming back from the full logo page: pick up any logo the user changed there.
+  const seen = useRef(false);
+  useFocusEffect(useCallback(() => { if (seen.current && pid) load(pid).catch(() => undefined); seen.current = true; /* eslint-disable-next-line */ }, [pid]));
+  const job = useJob(jobId, (j) => { refresh(); if (j.status === 'succeeded' && pid) load(pid).catch((e) => setErr(e)); });
   const running = job && !['succeeded', 'failed', 'cancelled'].includes(job.status);
 
   const generate = async () => {
@@ -60,25 +64,22 @@ export default function Logo() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
-      <Card index={0}><Row style={{ alignItems: 'flex-start' }}><Info size={18} color="#38bdf8" /><T size={12} muted style={{ flex: 1 }}>Logos are designed by Google Stitch with your own Stitch key, then cropped and exported as PNG (light, transparent, dark, white). Wordmark concepts also get a true SVG. Check trademarks before commercial use.</T></Row></Card>
       {!allowed && <ErrorBox error={Object.assign(new Error('Logo Studio is available on Pro and above.'), { action: 'upgrade_plan' }) as any} />}
       {allowed && !stitch?.connected && <ErrorBox error={Object.assign(new Error('Connect your Stitch key to generate logos.'), { action: 'open_integrations' }) as any} />}
-      {concepts.length > 0 && (
+      {concepts.length > 0 && pid && (
         <Card index={1} style={{ gap: 12 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-            {concepts.map((v, i) => <Animated.View key={v.id} entering={popIn.delay(i * 70)}><PressScale onPress={() => setActive(v)} scaleTo={0.92} style={{ borderWidth: 2, borderColor: active?.id === v.id ? c.primary : 'transparent', borderRadius: 14 }}><AssetImage url={v.imageUrl} size={96} /></PressScale></Animated.View>)}
-          </ScrollView>
-          {active?.logo && (<Animated.View key={active.id} entering={FadeInDown.springify().damping(18)} style={{ gap: 12 }}>
-            <Row style={{ justifyContent: 'center', gap: 12 }}>
-              <AssetImage url={active.imageUrl} size={140} />
-              {active.logo.assets.dark && <View style={{ backgroundColor: '#0a0a0f', borderRadius: 12 }}><AssetImage url={`/api/assets/${active.logo.assets.dark}`} size={140} /></View>}
-            </Row>
-            <Label>Palette</Label>
-            <Row>{active.logo.palette.map((col, i) => <Animated.View key={col} entering={popIn.delay(i * 60)} style={{ alignItems: 'center', gap: 2 }}><View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: col }} /><T size={10} muted>{col}</T></Animated.View>)}</Row>
-            <T size={13}><T weight="700" size={13}>{active.logo.typography.heading}</T> + {active.logo.typography.body}</T>
-            <T muted size={12}>{active.logo.typography.why}</T>
-            <Button title="Download brand kit" icon={<Download color="#fff" size={18} />} onPress={() => api.downloadAndShare('GET', `/versions/${active.id}/brand-kit`, undefined, 'brand-kit.zip').catch((e) => showAlert('Error', e.message))} />
-          </Animated.View>)}
+          <Row><T weight="700" style={{ flex: 1 }}>Your logos</T><T muted size={12}>Tap one to open it</T></Row>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+            {concepts.map((v, i) => (
+              <Animated.View key={v.id} entering={popIn.delay(i * 70)} style={{ width: '47%' }}>
+                <PressScale onPress={() => router.push({ pathname: '/logo-view/[id]', params: { id: pid, v: v.id } })} scaleTo={0.95} accessibilityLabel={`Open logo concept ${i + 1}`}
+                  style={{ borderRadius: 16, borderWidth: 1, borderColor: c.border, backgroundColor: c.card2, padding: 8, gap: 8 }}>
+                  <AssetImage url={v.imageUrl} size={0} fill />
+                  <Row gap={6}><T size={12} weight="600" style={{ flex: 1 }}>Concept {i + 1}</T><Wand2 size={14} color={c.primary} /><Maximize2 size={14} color={c.muted} /></Row>
+                </PressScale>
+              </Animated.View>
+            ))}
+          </View>
         </Card>
       )}
       {job && <JobCard job={job} onDismiss={() => setJobId(null)} />}

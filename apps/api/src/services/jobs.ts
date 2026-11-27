@@ -1,6 +1,7 @@
 import type { CreditOperation, DeviceType, GenerationJob, JobType, Project, ProjectKind, StitchModel } from '@designforge/shared';
 import { db, C } from '../lib/firebase.js';
 import { AppError } from '../lib/errors.js';
+import { ERROR_CODES } from '@designforge/shared';
 import { newId } from '../lib/crypto.js';
 import { logger } from '../lib/logger.js';
 import { env } from '../config.js';
@@ -10,7 +11,7 @@ import { createVersion, getVersion, loadProject } from './repo.js';
 import { persistRemoteImage, putBlob } from './blobs.js';
 import * as credits from './credits.js';
 import { notify, track } from './notify.js';
-import { runLogoJob, type LogoJobInput } from './logos.js';
+import { runLogoEdit, runLogoJob, type LogoEditInput, type LogoJobInput } from './logos.js';
 import { safeQuery } from '../lib/safeQuery.js';
 import { enhance, enhanceEditInstruction, stitchPromptFor, type DesignPlan, type OutputMode } from './promptEnhancer.js';
 import { publicApiUrl } from '../config.js';
@@ -30,7 +31,7 @@ export interface EditPayload { chat?: boolean; prompt: string; pageId: string; d
 export interface VariantsPayload { chat?: boolean; prompt: string; pageId: string; count: number; creativeRange: 'REFINE' | 'EXPLORE' | 'REIMAGINE'; deviceType: DeviceType; model: StitchModel }
 export interface ImprovePayload { chat?: boolean; pageId: string; instructions?: string; autoIterate: boolean; maxIterations: number; targetScore: number; deviceType: DeviceType; model: StitchModel; importAssetBase64?: string; importExt?: '.html' | '.png' | '.jpg' | '.jpeg' | '.webp' }
 
-type Payload = GeneratePayload | EditPayload | VariantsPayload | ImprovePayload | LogoJobInput;
+type Payload = GeneratePayload | EditPayload | VariantsPayload | ImprovePayload | LogoJobInput | LogoEditInput;
 
 interface QueueItem { jobId: string; priority: boolean }
 const queue: QueueItem[] = [];
@@ -91,7 +92,24 @@ export async function cancelJob(jobId: string, uid: string) {
  * While jobs are running we ping our own public /health every 4 min so the instance stays awake.
  */
 let keepAlive: ReturnType<typeof setInterval> | null = null;
+let alwaysAwake = false;
+/**
+ * Keeps the server awake ALL the time (not only during jobs), so users never wait ~30 s for a cold start.
+ * Render's free plan sleeps after 15 min without inbound traffic; a request to our own public URL every
+ * 4 min counts as traffic. Uses ~744 of the 750 free instance-hours per month (one service).
+ * Disable with KEEP_AWAKE=0 (e.g. on a paid plan, which never sleeps anyway).
+ */
+export function startKeepAwake() {
+  if (env.NODE_ENV !== 'production' || process.env.KEEP_AWAKE === '0' || alwaysAwake) return;
+  alwaysAwake = true;
+  if (keepAlive) clearInterval(keepAlive);
+  const ping = () => { fetch(`${publicApiUrl()}/health?keepawake=1`, { signal: AbortSignal.timeout(20_000) }).catch(() => undefined); };
+  keepAlive = setInterval(ping, 4 * 60_000);
+  keepAlive.unref?.();
+  setTimeout(ping, 30_000).unref?.();
+}
 function syncKeepAlive() {
+  if (alwaysAwake) return;
   const busy = running > 0 || queue.length > 0;
   if (busy && !keepAlive && env.NODE_ENV === 'production') {
     keepAlive = setInterval(() => { fetch(`${publicApiUrl()}/health`).catch(() => undefined); }, 4 * 60_000);
@@ -160,10 +178,15 @@ async function run(jobId: string) {
       case 'edit': case 'chat': resultVersionIds = await runEdit(ctx); break;
       case 'variants': resultVersionIds = await runVariants(ctx); break;
       case 'improve': resultVersionIds = await runImprove(ctx); break;
-      case 'logo': resultVersionIds = await runLogoJob(ctx, {
-        ensureProject: (proj) => ensureStitchProject(proj, ctx.job.ownerId, ctx),
-        generate: (sid, prompt, label) => generateWithFallback(ctx, ctx.job.ownerId, sid, prompt, 'DESKTOP', undefined, label),
-      }); break;
+      case 'logo': {
+        const logoStitch = {
+          ensureProject: (proj: Project) => ensureStitchProject(proj, ctx.job.ownerId, ctx),
+          generate: (sid: string, prompt: string, label: string) => generateWithFallback(ctx, ctx.job.ownerId, sid, prompt, 'DESKTOP', undefined, label),
+          edit: (sid: string, screenId: string, prompt: string) => ctx.timed(stitchEngine.edit(ctx.job.ownerId, sid, screenId, prompt, 'DESKTOP', 'GEMINI_3_8_FLASH'), 'Stitch logo change'),
+        };
+        resultVersionIds = (ctx.job.payload as { editOf?: string }).editOf ? await runLogoEdit(ctx, logoStitch) : await runLogoJob(ctx, logoStitch);
+        break;
+      }
     }
     await finish(job, 'succeeded', { resultVersionIds, stage: 'Completed' });
     await db().collection(C.generations).add({ ownerId: job.ownerId, projectId: job.projectId, jobId, type: job.type, status: 'succeeded', versionIds: resultVersionIds, createdAt: Date.now() });
@@ -171,7 +194,7 @@ async function run(jobId: string) {
     const pname = (await db().collection(C.projects).doc(job.projectId).get().catch(() => null))?.get('name') ?? 'your project';
     const n = resultVersionIds.length;
     const doneMsg = job.type === 'generate' ? (n > 1 ? `${n} screens of "${pname}" are ready. Tap to view.` : `"${pname}" is ready. Tap to view.`)
-      : job.type === 'variants' ? `${n} variations of "${pname}" are ready.` : job.type === 'logo' ? 'Your logo concepts are ready.' : `Your change to "${pname}" is applied.`;
+      : job.type === 'variants' ? `${n} variations of "${pname}" are ready.` : job.type === 'logo' ? ((job.payload as { editOf?: string })?.editOf ? 'Your logo change is ready.' : 'Your logo concepts are ready.') : `Your change to "${pname}" is applied.`;
     await notify(job.ownerId, 'generation_completed', 'Your design is ready ✨', doneMsg, { projectId: job.projectId, jobId });
     await maybeNotifyLowCredits(job.ownerId).catch(() => undefined);
   } catch (e) {
@@ -266,21 +289,42 @@ async function runGenerate(ctx: JobCtx) {
     await db().collection(C.projects).doc(project.id).update({ name: plan.appName, nameLower: plan.appName.toLowerCase() }).catch(() => undefined);
   }
 
-  const sid = await ensureStitchProject(project, uid, ctx);
+  // Complete app = 5 cr per screen, ALL reserved up front. If the balance can't cover every planned
+  // screen, nothing is generated (screen 1's enqueue charge is refunded by the job failure) and the
+  // error says how many screens the balance allows.
+  const preTxns: (string | undefined)[] = [undefined];
+  const settled = new Set<number>();
+  const releaseUnused = async (why: string) => {
+    for (let k = 1; k < preTxns.length; k++) {
+      const t = preTxns[k];
+      if (t && !settled.has(k)) { settled.add(k); await credits.refund(t, why).catch(() => undefined); }
+    }
+  };
+  if (total > 1) {
+    const per = credits.costOf('generate_flash', 1);
+    for (let i = 1; i < total; i++) {
+      try { preTxns.push((await credits.reserve(uid, 'generate_flash', `${ctx.job.id}_s${i}`, 1, { projectId: project.id, type: 'generate', screen: plan.screens[i].name })).txnId); }
+      catch {
+        await releaseUnused('Not enough credits for the complete app');
+        const bal = await credits.getBalance(uid).catch(() => 0);
+        const can = Math.floor((bal + per) / per); // + screen 1's charge, which is refunded on failure
+        throw new AppError(402, ERROR_CODES.INSUFFICIENT_CREDITS,
+          `This app has ${total} screens and needs ${total * per} credits (${per} per screen). Your balance covers ${can} screen${can === 1 ? '' : 's'}. Nothing was generated and no credits were used.`, 'open_billing');
+      }
+    }
+  }
+
+  const sid = await ensureStitchProject(project, uid, ctx).catch(async (e) => { await releaseUnused('Generation could not start'); throw e; });
   const ids: string[] = [];
   let firstVersion: { id: string; imageUrl?: string } | undefined;
   const warnings: string[] = [];
   for (let i = 0; i < total; i++) {
-    await ctx.checkCancelled();
+    try { await ctx.checkCancelled(); } catch (e) { await releaseUnused('Cancelled by user'); if (ids.length) break; throw e; }
     const screen = plan.screens[i];
     const span = 88 / total;
     const base = 8 + i * span;
-    // Screen 1 was paid at enqueue; each further screen reserves its own credits (idempotent per screen).
-    let txn: string | undefined;
-    if (i > 0) {
-      try { txn = (await credits.reserve(uid, 'generate_flash', `${ctx.job.id}_s${i}`, 1, { projectId: project.id, type: 'generate', screen: screen.name })).txnId; }
-      catch { warnings.push(`Stopped after ${i} screens: not enough credits for "${screen.name}".`); break; }
-    }
+    // Screen 1 was paid at enqueue; the others were reserved above (refunded if they fail or are skipped).
+    const txn: string | undefined = preTxns[i];
     try {
       const pageId = i === 0
         ? await firstPage(project, p, plan.isFullApp && !addingToExisting ? screen.name : undefined, !addingToExisting)
@@ -292,10 +336,11 @@ async function runGenerate(ctx: JobCtx) {
       const v = await saveScreen(ctx, project, pageId, r, 'stitch_generate', i === 0 ? p.prompt : `${plan.appName} · ${screen.name}`);
       ids.push(v.id);
       if (!firstVersion) firstVersion = v;
-      if (txn) await credits.commit(txn);
+      if (txn) { settled.add(i); await credits.commit(txn); }
       await jobRef(ctx.job.id).update({ screensDone: ids.length, resultVersionIds: ids, updatedAt: Date.now() });
     } catch (e) {
-      if (txn) await credits.refund(txn, `Screen failed: ${screen.name}`).catch(() => undefined);
+      if (txn) { settled.add(i); await credits.refund(txn, `Screen failed: ${screen.name}`).catch(() => undefined); }
+      if (e instanceof JobCancelled || i === 0 || !ids.length) await releaseUnused('Generation stopped');
       if (e instanceof JobCancelled) { if (ids.length) break; throw e; }
       // First screen failing fails the whole job (and refunds it). Later failures keep finished screens.
       if (i === 0 || !ids.length) throw e;
@@ -304,6 +349,7 @@ async function runGenerate(ctx: JobCtx) {
       if (e instanceof AppError && [401, 403, 412, 429].includes(e.status)) break;
     }
   }
+  await releaseUnused('Screen not generated');
   if (warnings.length) await jobRef(ctx.job.id).update({ warnings });
   // The project card should show the app's first (home) screen, not whichever finished last.
   if (ids.length > 1 && firstVersion) {

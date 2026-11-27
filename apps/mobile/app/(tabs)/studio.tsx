@@ -53,6 +53,8 @@ export default function Studio() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<ApiError | null>(null);
   const stitchOn = !!me?.connections.find((x) => x.provider === 'stitch')?.connected;
+  /** Every screen costs 5 credits; a full app is planned with only as many screens as the balance covers. */
+  const affordable = Math.floor((me?.credits ?? 0) / 5);
 
   const go = async () => {
     setBusy(true); setErr(null);
@@ -103,7 +105,7 @@ export default function Studio() {
               style={{ minHeight: 130, color: c.text, fontSize: 17, padding: 14, lineHeight: 24 }} accessibilityLabel="Describe what you want to build" />
             <Row style={{ justifyContent: 'space-between', paddingHorizontal: 12, paddingBottom: 8 }}>
               <T muted size={11}>{prompt.length ? `${prompt.length}/4000` : 'Short is fine'}</T>
-              <Row gap={4}><Coins size={12} color={c.amber} /><T muted size={11}>5 credits / screen</T></Row>
+              <Row gap={4}><Coins size={12} color={c.amber} /><T muted size={11}>5 cr / screen · {affordable >= 1 ? `you can make up to ${Math.min(affordable, 5)} screen${affordable > 1 ? 's' : ''}` : 'not enough credits'}</T></Row>
             </Row>
           </GlowBox>
         </Animated.View>
@@ -126,7 +128,12 @@ export default function Studio() {
 
         <ErrorBox error={err} />
         <Animated.View entering={FadeInUp.delay(420).springify()}>
-          <Button title={busy ? 'Starting…' : 'Generate design'} icon={<Sparkles color="#fff" size={18} />} loading={busy} disabled={prompt.trim().length < 5 || (!!me && !stitchOn)} onPress={go} style={{ minHeight: 56, borderRadius: 28 }} />
+          {!!me && affordable < 1 && (
+            <PressScale onPress={() => router.push('/billing')} style={{ padding: 12, borderRadius: 14, backgroundColor: c.amber + '1f', borderWidth: 1, borderColor: c.amber + '55' }}>
+              <T size={13}>You have {me.credits} credit{me.credits === 1 ? '' : 's'}. Each screen needs 5. <T size={13} weight="700" style={{ color: c.primary }}>Get credits →</T></T>
+            </PressScale>
+          )}
+          <Button title={busy ? 'Starting…' : 'Generate design'} icon={<Sparkles color="#fff" size={18} />} loading={busy} disabled={prompt.trim().length < 5 || (!!me && !stitchOn) || (!!me && affordable < 1)} onPress={go} style={{ minHeight: 56, borderRadius: 28 }} />
         </Animated.View>
 
         {/* How it works */}

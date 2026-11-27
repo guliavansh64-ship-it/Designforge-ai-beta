@@ -80,9 +80,11 @@ function Gate() {
       <Stack.Screen name="billing-history" options={{ title: 'Payment history' }} />
       <Stack.Screen name="project/[id]" options={{ title: 'Project' }} />
       <Stack.Screen name="preview/[id]" options={{ headerShown: false, animation: 'fade_from_bottom' }} />
+      <Stack.Screen name="play/[id]" options={{ headerShown: false, animation: 'fade' }} />
       <Stack.Screen name="integrations" options={{ title: 'Integrations' }} />
       <Stack.Screen name="billing" options={{ title: 'Plans & credits' }} />
       <Stack.Screen name="logo" options={{ title: 'Logo Studio' }} />
+      <Stack.Screen name="logo-view/[id]" options={{ headerShown: false, animation: 'fade_from_bottom' }} />
       <Stack.Screen name="improve" options={{ title: 'Improve a design' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications', animation: 'fade_from_bottom' }} />
       <Stack.Screen name="support" options={{ title: 'Help & support' }} />

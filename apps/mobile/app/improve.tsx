@@ -6,7 +6,7 @@ import * as FileSystem from 'expo-file-system';
 import { Upload, Wand2 } from 'lucide-react-native';
 import { api, newKey, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useApi, useJob } from '../lib/hooks';
+import { timeAgo, useApi, useJob } from '../lib/hooks';
 import { useColors } from '../lib/theme';
 import type { Job, Project } from '../lib/types';
 import { JobCard } from '../components/JobCard';
@@ -24,6 +24,7 @@ export default function Improve() {
   const eligible = (projects.data?.projects ?? []).filter((p) => p.kind !== 'logo' && p.pages.some((x) => x.currentVersionId));
   const [src, setSrc] = useState<'project' | 'upload'>('project');
   const [pid, setPid] = useState<string | null>(null);
+  const [pageSel, setPageSel] = useState<string | null>(null);
   const [file, setFile] = useState<{ name: string; b64: string; ext: string } | null>(null);
   const [goals, setGoals] = useState('');
   const [auto, setAuto] = useState(false);
@@ -50,7 +51,7 @@ export default function Improve() {
         if (!file) throw new Error('Choose a file');
         const r = await api.post<{ project: Project }>('/projects', { name: `Improve · ${file.name}`.slice(0, 80), kind: 'improve', deviceType: me?.preferences.defaultDevice ?? 'MOBILE' });
         projectId = r.project.id; pageId = r.project.pages[0].id; Object.assign(body, { importAssetBase64: file.b64, importExt: file.ext });
-      } else pageId = eligible.find((p) => p.id === pid)?.pages.find((x) => x.currentVersionId)?.id;
+      } else pageId = pageSel ?? eligible.find((p) => p.id === pid)?.pages.find((x) => x.currentVersionId)?.id;
       const { job: j } = await api.post<{ job: Job }>(`/projects/${projectId}/improve`, { ...body, pageId });
       setJobId(j.id); setResultPid(projectId);
     } catch (e) { setErr(e as ApiError); } finally { setBusy(false); }
@@ -59,10 +60,11 @@ export default function Improve() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
-      <Appear><T muted size={13}>Designo audits your design against a transparent checklist, plans fixes, applies them through your Stitch account, then re-audits and shows what changed. Scores are Designo heuristics, not objective ratings.</T></Appear>
+      <Appear><T muted size={13}>Works for your app screens AND for outside designs. Pick a screen (or upload an HTML file / screenshot): Designo checks it for quality problems (headings, readability, contrast, spacing, labels), sends the fixes to Stitch, then checks again and shows the before → after score. The improved screen is saved as a new version, so you can always go back.</T></Appear>
       <Row><Chip label="From a project" active={src === 'project'} onPress={() => setSrc('project')} /><Chip label="Upload HTML / screenshot" active={src === 'upload'} onPress={() => setSrc('upload')} /></Row>
       <Card index={1} style={{ gap: 10 }}>
-        <Swap id={src} style={{ gap: 10 }}>{src === 'project' ? (<><Label>Project</Label><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{eligible.map((p) => <Chip key={p.id} label={p.name} active={pid === p.id} onPress={() => setPid(p.id)} />)}</View>{!eligible.length && <T muted size={13}>No generated designs yet.</T>}</>)
+        <Swap id={src} style={{ gap: 10 }}>{src === 'project' ? (<><Label>Project</Label><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{eligible.map((p) => { const n = p.pages.filter((x) => x.currentVersionId).length; const dup = eligible.filter((q) => q.name === p.name).length > 1; return <Chip key={p.id} label={`${p.name}${dup || n > 1 ? ` · ${n} screen${n > 1 ? 's' : ''}` : ''}${dup ? ` · ${timeAgo(p.updatedAt)}` : ''}`} active={pid === p.id} onPress={() => { setPid(p.id); setPageSel(p.pages.find((x) => x.currentVersionId)?.id ?? null); }} />; })}</View>{!eligible.length && <T muted size={13}>No generated designs yet.</T>}
+          {pid && (() => { const pages = eligible.find((p) => p.id === pid)?.pages.filter((x) => x.currentVersionId) ?? []; return pages.length > 1 ? (<><Label>Screen to improve</Label><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{pages.map((pg) => <Chip key={pg.id} label={pg.name} active={pageSel === pg.id} onPress={() => setPageSel(pg.id)} />)}</View></>) : null; })()}</>)
           : <Button variant="secondary" title={file ? file.name : 'Choose file (max 5 MB)'} icon={<Upload size={18} color={c.text} />} onPress={pick} />}</Swap>
         <Label>Goals (optional)</Label><Field multiline value={goals} onChangeText={setGoals} style={{ minHeight: 80 }} placeholder="More premium, better readability on mobile…" />
         <Row style={{ justifyContent: 'space-between' }}><View style={{ flex: 1 }}><T>Auto-iterate (up to {maxIt})</T><T muted size={12}>{canAuto ? 'Stops at target, limit, or no measurable gain' : 'Pro and above'}</T></View><Switch value={auto && !!canAuto} disabled={!canAuto} onValueChange={setAuto} trackColor={{ true: c.primary }} /></Row>

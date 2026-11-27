@@ -156,6 +156,20 @@ generateRouter.post('/projects/:id/logos', generationLimiter, validate(z.object(
   res.status(202).json({ job });
 }));
 
+/** "Change this logo": Stitch edits one logo concept (costs the same as a design edit). */
+generateRouter.post('/versions/:vid/logo-edit', generationLimiter, validate(z.object({
+  instruction: z.string().trim().min(3).max(400), idempotencyKey: idem,
+})), ah(async (req, res) => {
+  const uid = req.user!.uid;
+  const vSnap = await db().collection(C.versions).doc(req.params.vid).get();
+  if (!vSnap.exists || vSnap.get('source') !== 'logo') throw Errors.notFound('Logo concept');
+  const project = await loadProject(vSnap.get('projectId'), uid, 'editor');
+  const pf = await preflight(uid, 'stitch');
+  if (!pf.plan.features.includes('logo_studio')) throw Errors.feature('logo studio');
+  const job = await enqueue({ ownerId: uid, projectId: project.id, type: 'logo', prompt: `Change logo: ${req.body.instruction}`.slice(0, 200), payload: { editOf: vSnap.id, instruction: req.body.instruction }, op: 'edit', idempotencyKey: req.body.idempotencyKey, priority: pf.priority });
+  res.status(202).json({ job });
+}));
+
 generateRouter.get('/jobs/:jobId', ah(async (req, res) => {
   const s = await db().collection(C.jobs).doc(req.params.jobId).get();
   if (!s.exists || s.get('ownerId') !== req.user!.uid) throw Errors.notFound('Job');

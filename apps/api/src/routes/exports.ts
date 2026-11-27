@@ -54,6 +54,50 @@ exportsRouter.post('/projects/:id/export', validate(z.object({
   }
 }));
 
+/** The Stitch screenshot of a version (stored blob, Cloudinary or https URL), or null when it has none. */
+async function screenshotOf(v: { imageUrl?: string; ownerId: string }): Promise<{ data: Buffer; mime: string; ext: string } | null> {
+  const url = v.imageUrl;
+  if (!url) return null;
+  let data: Buffer; let mime = 'image/png';
+  const m = /^\/api\/assets\/([A-Za-z0-9_-]+)/.exec(url);
+  if (m) {
+    const b = await getBlob(m[1], v.ownerId);
+    if ('data' in b) { data = b.data; mime = b.mime; }
+    else { const r = await fetch(b.redirect, { signal: AbortSignal.timeout(20_000) }); data = Buffer.from(await r.arrayBuffer()); mime = r.headers.get('content-type') ?? mime; }
+  } else if (/^https:\/\//.test(url)) {
+    const r = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (!r.ok) throw new AppError(502, 'DOWNLOAD_FAILED', 'Could not fetch the screenshot.');
+    data = Buffer.from(await r.arrayBuffer()); mime = r.headers.get('content-type') ?? mime;
+  } else return null;
+  return { data, mime, ext: mime.includes('jpeg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png' };
+}
+
+/**
+ * All screens of a project as images in one ZIP (free — no code, just the pictures the user already sees).
+ * Files are numbered in screen order: 01-home.png, 02-menu.png …
+ */
+exportsRouter.get('/projects/:id/screenshots', ah(async (req, res) => {
+  const uid = req.user!.uid;
+  const p = await loadProject(req.params.id, uid, 'viewer');
+  const files: Record<string, Buffer> = {};
+  let n = 0;
+  for (const pg of p.pages) {
+    if (!pg.currentVersionId) continue;
+    const v: any = await getVersion(pg.currentVersionId, uid);
+    const shot = await screenshotOf(v).catch(() => null);
+    if (!shot) continue;
+    n++;
+    files[`${String(n).padStart(2, '0')}-${slug(pg.name)}.${shot.ext}`] = shot.data;
+  }
+  if (!n) throw Errors.validation('No screenshots yet. Generate a screen first.');
+  const zip = await zipFiles(files, `${slug(p.name)}-screens`);
+  await track('download_screenshots');
+  res.setHeader('content-type', 'application/zip');
+  res.setHeader('content-disposition', `attachment; filename="${slug(p.name)}-screens.zip"`);
+  res.setHeader('access-control-expose-headers', 'content-disposition');
+  res.send(zip);
+}));
+
 /**
  * Single-version downloads (free — the user already owns and sees this content):
  *   ?format=html → the page as one self-contained .html file
@@ -67,23 +111,11 @@ exportsRouter.get('/versions/:vid/download', validate(z.object({ format: z.enum(
   const base = `${slug(p.name)}-${slug(page?.name ?? 'screen')}`;
   res.setHeader('access-control-expose-headers', 'content-disposition');
   if (req.query.format === 'png') {
-    const url: string | undefined = v.imageUrl;
-    if (!url) throw Errors.validation('This version has no screenshot. Regenerate it or download the HTML instead.');
-    let data: Buffer; let mime = 'image/png';
-    const m = /^\/api\/assets\/([A-Za-z0-9_-]+)/.exec(url);
-    if (m) {
-      const b = await getBlob(m[1], v.ownerId);
-      if ('data' in b) { data = b.data; mime = b.mime; }
-      else { const r = await fetch(b.redirect); data = Buffer.from(await r.arrayBuffer()); mime = r.headers.get('content-type') ?? mime; }
-    } else if (/^https:\/\//.test(url)) {
-      const r = await fetch(url, { signal: AbortSignal.timeout(20_000) });
-      if (!r.ok) throw new AppError(502, 'DOWNLOAD_FAILED', 'Could not fetch the screenshot.');
-      data = Buffer.from(await r.arrayBuffer()); mime = r.headers.get('content-type') ?? mime;
-    } else throw Errors.validation('Screenshot unavailable.');
-    const ext = mime.includes('jpeg') ? 'jpg' : mime.includes('webp') ? 'webp' : 'png';
-    res.setHeader('content-type', mime);
-    res.setHeader('content-disposition', `attachment; filename="${base}.${ext}"`);
-    res.send(data);
+    const shot = await screenshotOf(v);
+    if (!shot) throw Errors.validation('This version has no screenshot. Regenerate it or download the HTML instead.');
+    res.setHeader('content-type', shot.mime);
+    res.setHeader('content-disposition', `attachment; filename="${base}.${shot.ext}"`);
+    res.send(shot.data);
     return;
   }
   if (!v.html) throw Errors.validation('This version has no HTML.');

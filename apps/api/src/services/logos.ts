@@ -77,6 +77,18 @@ export async function cropToLogo(shot: Buffer, size = 1024): Promise<Buffer> {
 export interface LogoStitch {
   ensureProject(project: Project): Promise<string>;
   generate(stitchProjectId: string, prompt: string, label: string): Promise<{ html: string; screenId?: string; image?: { data: Buffer; mime: string } }>;
+  edit(stitchProjectId: string, screenId: string, prompt: string): Promise<{ html: string; screenId?: string; image?: { data: Buffer; mime: string } }>;
+}
+
+export interface LogoEditInput { editOf: string; instruction: string }
+
+/** Instruction sent to Stitch when the user asks to change one logo concept. */
+export function logoEditPrompt(instruction: string) {
+  return [
+    `Change this logo: ${instruction.trim()}`,
+    'Keep it a LOGO only: the whole screen stays a plain pure white (#FFFFFF) canvas with the logo large and perfectly centred, and nothing else on it (no navigation, buttons, text paragraphs, cards, frames or mockups). Flat vector look, crisp edges.',
+    'Apply the change directly without asking questions.',
+  ].join('\n');
 }
 
 export async function makeTransparent(png: Buffer, threshold = 238): Promise<Buffer> {
@@ -94,6 +106,22 @@ export async function monoWhite(transparentPng: Buffer): Promise<Buffer> {
   const { data, info } = await sharp(transparentPng).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   for (let i = 0; i < data.length; i += 4) { data[i] = 255; data[i + 1] = 255; data[i + 2] = 255; }
   return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
+/** Average brightness (0–1) of the visible (non-transparent) pixels. */
+export async function inkLuminance(transparentPng: Buffer): Promise<number> {
+  const { data } = await sharp(transparentPng).resize(96, 96, { fit: 'inside' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  let sum = 0, n = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 128) continue;
+    sum += (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255; n++;
+  }
+  return n ? sum / n : 1;
+}
+
+/** Dark-mode preview. A mostly dark logo would vanish on a dark background, so it uses the white version instead. */
+export async function darkPreview(transparentPng: Buffer, mono: Buffer): Promise<Buffer> {
+  return onDark((await inkLuminance(transparentPng)) < 0.35 ? mono : transparentPng);
 }
 
 export async function onDark(transparentPng: Buffer, bg = '#0B0B12'): Promise<Buffer> {
@@ -169,7 +197,8 @@ export async function runLogoJob(ctx: JobCtx, stitch: LogoStitch): Promise<strin
       errors.push((e as Error).message); continue;
     }
     const transparent = await makeTransparent(png);
-    const [dark, mono, palette] = await Promise.all([onDark(transparent), monoWhite(transparent), extractPalette(png)]);
+    const mono = await monoWhite(transparent);
+    const [dark, palette] = await Promise.all([darkPreview(transparent, mono), extractPalette(png)]);
     const meta = { projectId: project.id, kind: 'logo', concept: i };
     const [a1, a2, a3, a4] = await Promise.all([
       putBlob(uid, png, 'image/png', { ...meta, variant: 'light' }),
@@ -203,4 +232,50 @@ export async function runLogoJob(ctx: JobCtx, stitch: LogoStitch): Promise<strin
     ids.push(v.id);
   }
   return ids;
+}
+
+
+/**
+ * "Change this logo": Stitch edits that concept's own screen (or, for concepts made before screen ids were stored,
+ * re-designs it from the original brief + the requested change). The result becomes the new head of the same
+ * concept page, so the history keeps the previous logo.
+ */
+export async function runLogoEdit(ctx: JobCtx, stitch: LogoStitch): Promise<string[]> {
+  const input = ctx.job.payload as unknown as LogoEditInput;
+  const uid = ctx.job.ownerId;
+  const project = await loadProject(ctx.job.projectId, uid, 'editor');
+  const prevSnap = await db().collection(C.versions).doc(input.editOf).get();
+  const prev = prevSnap.data() as any;
+  if (!prevSnap.exists || prev.projectId !== project.id || prev.source !== 'logo') throw new AppError(404, 'NOT_FOUND', 'Logo concept not found');
+  const sid = await stitch.ensureProject(project as Project);
+  await ctx.stage('Changing your logo with Google Stitch', 15);
+  const r = prev.stitchScreenId
+    ? await stitch.edit(sid, prev.stitchScreenId, logoEditPrompt(input.instruction))
+    : await stitch.generate(sid, `${prev.prompt ?? ''}\n\nCHANGE REQUESTED BY THE USER (apply it): ${input.instruction.trim()}`, 'logo change');
+  if (!r.image?.data?.length) throw new AppError(502, 'STITCH_EMPTY_RESULT', 'Stitch did not return a rendering for this logo. Please try again.');
+  await ctx.checkCancelled();
+  await ctx.stage('Preparing logo files', 85);
+  const png = await cropToLogo(r.image.data);
+  const transparent = await makeTransparent(png);
+  const mono = await monoWhite(transparent);
+  const [dark, palette] = await Promise.all([darkPreview(transparent, mono), extractPalette(png)]);
+  const meta = { projectId: project.id, kind: 'logo', concept: prev.logo?.concept ?? 0 };
+  const [a1, a2, a3, a4] = await Promise.all([
+    putBlob(uid, png, 'image/png', { ...meta, variant: 'light' }),
+    putBlob(uid, transparent, 'image/png', { ...meta, variant: 'transparent' }),
+    putBlob(uid, dark, 'image/png', { ...meta, variant: 'dark' }),
+    putBlob(uid, mono, 'image/png', { ...meta, variant: 'mono_white' }),
+  ]);
+  const style = prev.logo?.style ?? 'Modern';
+  const type = prev.logo?.typography ?? TYPE_PAIRINGS[style] ?? TYPE_PAIRINGS.Modern;
+  const v = await createVersion({
+    projectId: project.id, ownerId: uid, pageId: prev.pageId, parentVersionId: prev.id, source: 'logo',
+    prompt: `${prev.prompt ?? ''}\n\nChange: ${input.instruction.trim()}`.trim(),
+    html: brandPreviewHtml(project.name.replace(/ brand$/i, ''), { light: a1.url, dark: a3.url, transparent: a2.url }, palette, type, style),
+    imageUrl: a1.url, stitchScreenId: r.screenId ?? prev.stitchScreenId,
+  });
+  await db().collection(C.versions).doc(v.id).update({
+    logo: { style, palette, typography: type, change: input.instruction.trim(), assets: { light: a1.id, transparent: a2.id, dark: a3.id, monoWhite: a4.id, svg: null } },
+  });
+  return [v.id];
 }

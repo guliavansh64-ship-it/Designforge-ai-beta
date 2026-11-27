@@ -108,4 +108,18 @@ describe('full-app generation job', () => {
     const project = (await fake.db.collection('projects').doc('p1').get()).data()!;
     expect(project.pages).toHaveLength(1);
   });
+
+  it('not enough credits for every screen → nothing generated, nothing charged, says how many fit', async () => {
+    await credits.getBalance('u1');
+    await fake.db.collection('credit_wallets').doc('u1').update({ balance: 12 });
+    const job = await jobs.enqueue({ ownerId: 'u1', projectId: 'p1', type: 'generate', prompt: 'create a fitness app',
+      payload: { prompt: 'create a fitness app', deviceType: 'MOBILE', model: 'GEMINI_3_8_FLASH', pageId: 'pg_first', enhance: true, mode: 'app', maxScreens: 4 },
+      op: 'generate_flash', idempotencyKey: 'fullapp-test-short', priority: false });
+    const done = await waitDone(job.id);
+    expect(done.status).toBe('failed');
+    expect(done.error.code).toBe('INSUFFICIENT_CREDITS');
+    expect(done.error.message).toMatch(/4 screens.*covers 2 screens.*Nothing was generated/);
+    expect(prompts).toHaveLength(0);
+    expect(await credits.getBalance('u1')).toBe(12);
+  });
 });

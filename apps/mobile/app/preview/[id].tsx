@@ -10,6 +10,7 @@ import { useAuth } from '../../lib/auth';
 import { useColors } from '../../lib/theme';
 import type { Project, Version } from '../../lib/types';
 import { HtmlPreview } from '../../components/HtmlPreview';
+import { saveDownload } from '../../components/DownloadOptions';
 import { showAlert, toast } from '../../components/Dialog';
 import { Button, Chip, ErrorBox, Row, T } from '../../components/ui';
 import { Animated, PressScale, Skeleton } from '../../components/motion';
@@ -94,17 +95,16 @@ export default function PreviewScreen() {
     try {
       if (kind === 'png') {
         if (!version) return;
-        await api.downloadAndShare('GET', `/versions/${version.id}/download?format=png`, null, `${safe}-${pg}.png`, 'image/png');
+        await saveDownload('GET', `/versions/${version.id}/download?format=png`, null, `${safe}-${pg}.png`, 'image/png');
       } else if (kind === 'html') {
         if (!version) return;
-        await api.downloadAndShare('GET', `/versions/${version.id}/download?format=html`, null, `${safe}-${pg}.html`, 'text/html');
+        await saveDownload('GET', `/versions/${version.id}/download?format=html`, null, `${safe}-${pg}.html`, 'text/html');
       } else {
         const format = kind === 'zip-react' ? 'react' : 'html';
-        await api.downloadAndShare('POST', `/projects/${project.id}/export`, { format, idempotencyKey: newKey() }, `${safe}-${format}.zip`);
+        await saveDownload('POST', `/projects/${project.id}/export`, { format, idempotencyKey: newKey() }, `${safe}-${format}.zip`, 'application/zip');
         refresh();
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-      toast('Ready — choose where to save it', 'success');
       setSheet(false);
     } catch (e) {
       const ae = e as ApiError;
@@ -174,7 +174,7 @@ export default function PreviewScreen() {
         <Pressable style={{ flex: 1, backgroundColor: '#0008', justifyContent: 'flex-end' }} onPress={() => setSheet(false)}>
           <Pressable onPress={() => undefined} style={{ backgroundColor: c.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 16, paddingBottom: 16 + insets.bottom, gap: 10 }}>
             <Row style={{ justifyContent: 'space-between' }}><T weight="700" size={18}>Download</T><Pressable onPress={() => setSheet(false)} accessibilityLabel="Close"><X color={c.text} /></Pressable></Row>
-            <T muted size={12}>Files open in Android's share sheet — save to Files/Downloads, Drive, WhatsApp, email…</T>
+            <T muted size={12}>Files are saved to your phone’s Downloads › Designo folder.</T>
             <Button variant="secondary" title={`Screenshot of "${page?.name ?? 'screen'}" (PNG) · free`} icon={<ImageIcon size={18} color={c.text} />} loading={busy === 'png'} disabled={!version?.imageUrl || !!busy} onPress={() => download('png')} />
             {version && !version.imageUrl && <T muted size={11}>No screenshot was returned by Stitch for this screen.</T>}
             <Button variant="secondary" title={`This page as one .html file · free`} icon={<FileCode2 size={18} color={c.text} />} loading={busy === 'html'} disabled={!version || !!busy} onPress={() => download('html')} />
