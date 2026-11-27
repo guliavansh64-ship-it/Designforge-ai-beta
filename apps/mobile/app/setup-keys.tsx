@@ -15,11 +15,11 @@ import { toast } from '../components/Dialog';
 type P = 'stitch' | 'gemini';
 const INFO: Record<P, { name: string; does: string; url: string; site: string; steps: string[]; icon: typeof Sparkles; color: string }> = {
   stitch: {
-    name: 'Google Stitch API', does: 'Designs UI screens, websites, and Logo & Brand Studio concepts.', url: 'https://stitch.withgoogle.com/settings', site: 'stitch.withgoogle.com', icon: Sparkles, color: '#7c5cff',
+    name: 'Google Stitch API', does: 'Designs every app screen and website for you.', url: 'https://stitch.withgoogle.com/settings', site: 'stitch.withgoogle.com', icon: Sparkles, color: '#7c5cff',
     steps: ['Tap “Open Stitch” below and sign in with Google', 'Open Settings → API keys', 'Tap “Create key” and copy it', 'Come back here, paste it and tap Connect'],
   },
   gemini: {
-    name: 'Gemini API', does: 'Makes your short ideas smarter and powers the AI assistant.', url: 'https://aistudio.google.com/app/apikey', site: 'aistudio.google.com', icon: Wand2, color: '#ff7a45',
+    name: 'Gemini API', does: 'Makes your short ideas smarter, powers the free Assistant and Logo Studio.', url: 'https://aistudio.google.com/app/apikey', site: 'aistudio.google.com', icon: Wand2, color: '#ff7a45',
     steps: ['Tap “Open AI Studio” below and sign in with Google', 'Tap “Create API key”', 'Copy the key (starts with “AIza”)', 'Come back here, paste it and tap Connect'],
   },
 };

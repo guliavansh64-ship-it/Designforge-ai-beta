@@ -20,6 +20,6 @@ export function fbAuth(): Auth {
   return auth;
 }
 
-/** DesignForge login only requests basic profile scopes. Stitch access is a SEPARATE step (Integrations). */
+/** Designo login only requests basic profile scopes. Stitch access is a SEPARATE step (Integrations). */
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });

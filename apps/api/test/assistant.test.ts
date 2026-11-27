@@ -23,9 +23,15 @@ describe('read-only assistant (built-in answers)', () => {
     expect(builtInAnswer('is it still generating?', p, a)).toMatch(/running \(40%\)/);
     expect(builtInAnswer('tell me about the home page', p, a)).toMatch(/Start workout/);
   });
+  it('understands greetings, the project name and summaries', () => {
+    expect(builtInAnswer('Hi', p, a)).toMatch(/PulseFit.*an app UI with 2 pages/);
+    expect(builtInAnswer('Name of project', p, a)).toMatch(/called “PulseFit”.*Home, Profile/);
+    expect(builtInAnswer('what is this project about?', p, a)).toMatch(/an app UI designed for mobile/);
+    expect(builtInAnswer('hello', null, a)).toMatch(/433 credits/);
+  });
   it('never changes anything and explains costs', () => {
     expect(builtInAnswer('change the header to red', p, a)).toMatch(/only answer questions/);
-    expect(builtInAnswer('how many credits do I have', p, a)).toMatch(/433 credits.*free/);
+    expect(builtInAnswer('how many credits do I have', p, a)).toMatch(/433 credits.*free.*5 credits per screen/);
     expect(builtInAnswer('hi', null, a)).toMatch(/433 credits/);
   });
 });

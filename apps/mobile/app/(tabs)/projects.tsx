@@ -38,7 +38,7 @@ export default function Projects() {
         <Row><Chip label="Mine" active={scope === 'mine'} onPress={() => setScope('mine')} /><Chip label="Shared" active={scope === 'shared'} onPress={() => setScope('shared')} /><Chip label="Archived" active={scope === 'archived'} onPress={() => setScope('archived')} /></Row>
         <ErrorBox error={error} />
       </View>
-      <Animated.FlatList removeClippedSubviews initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} data={data?.projects ?? []} keyExtractor={(p) => p.id} contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 10, paddingBottom: 110 }}
+      <Animated.FlatList removeClippedSubviews initialNumToRender={8} maxToRenderPerBatch={8} windowSize={7} data={data?.projects ?? []} keyExtractor={(p) => p.id} contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 10 }}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={reload} tintColor={c.primary} />}
         ListEmptyComponent={loading ? <SkeletonList rows={4} /> : <Empty icon={<FolderKanban size={32} color={c.primary} />} title="No projects" body="Create one from the Studio tab." />}
         renderItem={({ item: p, index }) => (

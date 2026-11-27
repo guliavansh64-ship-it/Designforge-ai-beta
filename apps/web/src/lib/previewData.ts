@@ -28,7 +28,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;p
 const now = Date.now();
 const day = 86400_000;
 const audit = {
-  score: 86, measuredAt: now, methodology: 'Severity-weighted percentage of DesignForge automated heuristics that pass. Not an industry-standard score.',
+  score: 86, measuredAt: now, methodology: 'Severity-weighted percentage of Designo automated heuristics that pass. Not an industry-standard score.',
   checks: [
     { id: 'viewport', category: 'responsive', label: 'Has responsive viewport meta', passed: true, severity: 'high', detail: 'Present.' },
     { id: 'single_h1', category: 'hierarchy', label: 'Exactly one primary heading (h1)', passed: true, severity: 'high', detail: 'Found 1.' },
@@ -82,7 +82,7 @@ export function previewGet(path: string): unknown {
   if (p === '/admin/payments') return { payments: [{ id: 'order_1', ownerId: 'u0', status: 'paid', amountPaise: 49900, description: 'Pro monthly', method: 'upi', createdAt: now - day }, { id: 'order_2', ownerId: 'u1', status: 'failed', amountPaise: 129900, description: 'Premium monthly', createdAt: now - 2 * day }] };
   if (p === '/admin/subscriptions') return { subscriptions: [] };
   if (p === '/admin/templates') return previewGet('/templates');
-  if (p === '/admin/settings') return { settings: { platformName: 'DesignForge AI', primaryColor: '#7C5CFF', maintenanceMode: false, supportEmail: 'support@designforge.app', featureFlags: { logoStudio: true, chatAssistant: true, autoImprove: true, sharing: true, reactExport: true }, limits: { maxPromptChars: 4000, maxUploadBytes: 5242880, maxProjectsFree: 5 } } };
+  if (p === '/admin/settings') return { settings: { platformName: 'Designo', primaryColor: '#7C5CFF', maintenanceMode: false, supportEmail: 'support@designforge.app', featureFlags: { logoStudio: true, chatAssistant: true, autoImprove: true, sharing: true, reactExport: true }, limits: { maxPromptChars: 4000, maxUploadBytes: 5242880, maxProjectsFree: 5 } } };
   if (p === '/admin/announcements') return previewGet('/announcements');
   if (p === '/admin/tickets') return previewGet('/tickets');
   if (p === '/admin/errors') return { errors: [{ id: 'e1', type: 'generate', error: { code: 'STITCH_RATE_LIMITED', message: 'Your Google Stitch quota has been reached.' }, createdAt: now - 3600_000 }] };

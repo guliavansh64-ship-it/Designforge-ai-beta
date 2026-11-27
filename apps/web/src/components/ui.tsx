@@ -177,7 +177,7 @@ export function ScoreRing({ score, size = 56 }: { score: number; size?: number }
   const r = (size - 8) / 2; const c = 2 * Math.PI * r;
   const tone = score >= 85 ? '#22c55e' : score >= 65 ? '#f59e0b' : '#ef4444';
   return (
-    <div className="relative" style={{ width: size, height: size }} title="DesignForge heuristic score — share of automated checks passed (not an industry standard)">
+    <div className="relative" style={{ width: size, height: size }} title="Designo heuristic score — share of automated checks passed (not an industry standard)">
       <svg width={size} height={size} className="-rotate-90"><circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="6" className="stroke-ink-200 dark:stroke-ink-800" /><circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth="6" stroke={tone} strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c - (score / 100) * c} /></svg>
       <span className="absolute inset-0 grid place-items-center text-sm font-bold">{score}</span>
     </div>

@@ -33,7 +33,7 @@ export async function loadApiUrlOverride() {
   apiUrl = saved; listeners.forEach((l) => l(apiUrl));
 }
 
-/** Normalises + validates a server URL and checks that /health answers like a DesignForge API. */
+/** Normalises + validates a server URL and checks that /health answers like a Designo API. */
 export async function testApiUrl(raw: string): Promise<string> {
   let u: URL;
   try { u = new URL(raw.trim()); } catch { throw new Error('Enter a full URL, e.g. https://my-api.onrender.com'); }
@@ -46,7 +46,7 @@ export async function testApiUrl(raw: string): Promise<string> {
     const j = await r.json().catch(() => null);
     if (!r.ok || !j?.ok) throw new Error(`Server answered ${r.status} but it is not a Designo API`);
   } catch (e) {
-    throw new Error((e as Error).name === 'AbortError' ? 'No answer within 60 s' : (e as Error).message.includes('Designo') || (e as Error).message.includes('DesignForge') ? (e as Error).message : `Could not reach ${base}/health`);
+    throw new Error((e as Error).name === 'AbortError' ? 'No answer within 60 s' : (e as Error).message.includes('Designo') ? (e as Error).message : `Could not reach ${base}/health`);
   } finally { clearTimeout(t); }
   return base;
 }

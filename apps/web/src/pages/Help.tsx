@@ -7,12 +7,12 @@ import { Badge, Button, Card, ErrorBox, Modal, PageHeader, cx } from '../compone
 
 interface Ticket { id: string; subject: string; type: string; status: string; messages: { from: string; text: string; at: number }[]; updatedAt: number }
 const FAQ = [
-  ['Why do I need my own Stitch account?', 'Google Stitch is a Google product with per-account quotas. DesignForge connects to your account with your explicit authorization, so generations use your quota and your designs live in your Stitch account. We never use a shared key.'],
-  ['What are credits for, if Stitch is free?', 'Credits pay for DesignForge itself: the job queue, auditing & improvement engine, version history, editor, exports and hosting. Google\'s Stitch quota is separate.'],
+  ['Why do I need my own Stitch account?', 'Google Stitch is a Google product with per-account quotas. Designo connects to your account with your explicit authorization, so generations use your quota and your designs live in your Stitch account. We never use a shared key.'],
+  ['What are credits for, if Stitch is free?', 'Credits pay for Designo itself: the job queue, auditing & improvement engine, version history, editor, exports and hosting. Google\'s Stitch quota is separate.'],
   ['A generation failed. Was I charged?', 'No. Credits are reserved when a job starts and automatically refunded if it fails or you cancel before completion.'],
   ['Why is my Stitch key "invalid" or "no access"?', 'The key may have been deleted/rotated, or your Google account hasn\'t opened Stitch yet. Visit stitch.withgoogle.com once, then reconnect in Integrations.'],
   ['Can Stitch generate logos?', 'No — Stitch generates UI screens. Logo Studio uses a separate Gemini image model with your own Gemini key.'],
-  ['Is the quality score objective?', 'No. It\'s the share of DesignForge\'s automated heuristics (contrast, headings, landmarks, spacing, responsiveness…) that pass. Treat it as a checklist.'],
+  ['Is the quality score objective?', 'No. It\'s the share of Designo\'s automated heuristics (contrast, headings, landmarks, spacing, responsiveness…) that pass. Treat it as a checklist.'],
   ['Can I export to Figma?', 'Not currently — there\'s no reliable public API path. You can export HTML or React + TypeScript.'],
   ['How do refunds work for payments?', 'Contact support with your invoice number. Approved refunds are issued through Razorpay to the original payment method.'],
 ];

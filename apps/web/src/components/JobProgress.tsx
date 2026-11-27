@@ -75,7 +75,7 @@ export function JobProgress({ job, onClose, compact }: { job: GenerationJob; onC
 
       {history.length > 0 && !compact && (
         <div className="mt-5 space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide muted">Iterations (DesignForge heuristic score)</p>
+          <p className="text-xs font-semibold uppercase tracking-wide muted">Iterations (Designo heuristic score)</p>
           {history.map((h) => (
             <motion.div key={h.iteration} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="surface-2 rounded-xl p-3 text-sm">
               <div className="flex items-center gap-2 font-medium">Iteration {h.iteration}: {h.before} <ArrowRight className="h-3.5 w-3.5" /> {h.after}

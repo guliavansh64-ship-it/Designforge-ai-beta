@@ -30,7 +30,7 @@ export default function Settings() {
     if (v) registerForPush({ prompt: true }).catch(() => undefined); else unregisterPush();
   };
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 110 }}>
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
       <Card index={0}><Row>
         <Animated.View entering={popIn.delay(100)}>{me?.user.photoURL ? <Image source={{ uri: me.user.photoURL }} style={{ width: 52, height: 52, borderRadius: 26 }} /> : <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: c.primary }} />}</Animated.View>
         <View style={{ flex: 1 }}><T weight="600">{me?.user.displayName}</T><T muted size={13}>{me?.user.email}</T><Row gap={4}><T muted size={12}>{me?.plan.name} plan ·</T><CountUp value={me?.credits ?? 0} style={{ color: c.muted, fontSize: 12 }} /><T muted size={12}>credits</T></Row></View>

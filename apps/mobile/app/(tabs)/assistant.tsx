@@ -102,7 +102,7 @@ export default function Assistant() {
         ))}
       </ScrollView>
 
-      <View style={{ flexDirection: 'row', gap: 8, padding: 12, paddingBottom: 88, borderTopWidth: 1, borderTopColor: c.border, backgroundColor: c.bg, alignItems: 'flex-end' }}>
+      <View style={{ flexDirection: 'row', gap: 8, padding: 12, borderTopWidth: 1, borderTopColor: c.border, backgroundColor: c.bg, alignItems: 'flex-end' }}>
         <TextInput value={text} onChangeText={setText} placeholder={project ? `Ask about “${project.name}”…` : 'Ask a question…'} placeholderTextColor={c.muted} multiline maxLength={1500}
           style={{ flex: 1, minHeight: 46, maxHeight: 120, backgroundColor: c.card, borderRadius: 23, paddingHorizontal: 16, paddingVertical: 12, color: c.text, fontSize: 15, borderWidth: 1, borderColor: c.border }}
           onSubmitEditing={() => ask(text)} accessibilityLabel="Ask the assistant" />

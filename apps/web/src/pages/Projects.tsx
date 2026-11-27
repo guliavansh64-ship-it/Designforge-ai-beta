@@ -108,7 +108,7 @@ export default function Projects() {
         </form>
       </Modal>
       <Modal open={!!deleting} onClose={() => setDeleting(null)} title="Delete project?">
-        <p className="text-sm">“{deleting?.name}” and all its versions, chat history and exports will be permanently deleted from DesignForge. The linked project in your Stitch account is not touched.</p>
+        <p className="text-sm">“{deleting?.name}” and all its versions, chat history and exports will be permanently deleted from Designo. The linked project in your Stitch account is not touched.</p>
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button><Button variant="danger" onClick={() => { const p = deleting!; setDeleting(null); act(() => api.del(`/projects/${p.id}`), 'Deleted'); }}>Delete permanently</Button></div>
       </Modal>
     </div>

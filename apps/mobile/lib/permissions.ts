@@ -1,74 +1,19 @@
-import { Linking, NativeModules, Platform } from 'react-native';
-
-const { SystemPermissions } = NativeModules;
-
-/**
- * Checks whether battery optimization is disabled ("Don't optimise / Allow" / Unrestricted) for this app.
- * Returns true if the app is exempt from battery optimizations.
- */
-export async function isBatteryOptimizationIgnored(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  if (SystemPermissions?.isBatteryOptimizationIgnored) {
-    try {
-      const ignored = await SystemPermissions.isBatteryOptimizationIgnored();
-      return Boolean(ignored);
-    } catch {
-      return false;
-    }
-  }
-  return false;
-}
+import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import { Power } from '../modules/designo-power';
 
 /**
- * Requests the system dialog to ignore battery optimizations directly,
- * or opens the battery optimization settings if the direct dialog is unavailable.
+ * Mandatory permissions. Every value is READ FROM ANDROID — a tick is only shown when the setting is
+ * really enabled, never just because the user tapped a button.
  */
-export async function requestIgnoreBatteryOptimizations(): Promise<void> {
-  if (Platform.OS !== 'android') return;
-  if (SystemPermissions?.requestIgnoreBatteryOptimizations) {
-    try {
-      await SystemPermissions.requestIgnoreBatteryOptimizations();
-      return;
-    } catch {
-      // Fall through to Linking fallback
-    }
-  }
-  try {
-    await Linking.sendIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS');
-  } catch {
-    Linking.openSettings();
-  }
-}
+export interface PermState { notifications: boolean; battery: boolean; background: boolean }
 
-/**
- * Checks whether background execution is restricted by the user.
- * Returns true if background activity IS restricted, false if background activity is allowed.
- */
-export async function isBackgroundRestricted(): Promise<boolean> {
-  if (Platform.OS !== 'android') return false;
-  if (SystemPermissions?.isBackgroundRestricted) {
-    try {
-      const restricted = await SystemPermissions.isBackgroundRestricted();
-      return Boolean(restricted);
-    } catch {
-      return false;
-    }
-  }
-  return false;
+export async function readPermissions(): Promise<PermState> {
+  const notifications = (await Notifications.getPermissionsAsync().catch(() => ({ status: 'denied' }))).status === 'granted';
+  if (Platform.OS !== 'android' || !Power) return { notifications, battery: true, background: true };
+  let battery = false; let background = false;
+  try { battery = Power.isIgnoringBatteryOptimizations(); } catch { battery = false; }
+  try { background = !Power.isBackgroundRestricted(); } catch { background = false; }
+  return { notifications, battery, background };
 }
-
-/**
- * Opens OEM autostart management (Vivo, Xiaomi, Oppo, etc.) or App Info settings.
- */
-export async function openAutostartSettings(): Promise<void> {
-  if (Platform.OS !== 'android') return;
-  if (SystemPermissions?.openAutostartSettings) {
-    try {
-      await SystemPermissions.openAutostartSettings();
-      return;
-    } catch {
-      // Fall through to Linking
-    }
-  }
-  Linking.openSettings();
-}
+export const allGranted = (p: PermState) => p.notifications && p.battery && p.background;

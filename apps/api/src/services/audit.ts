@@ -2,15 +2,15 @@ import { parse, type HTMLElement } from 'node-html-parser';
 import type { AuditCheck, ProjectKind, QualityAudit } from '@designforge/shared';
 
 /**
- * DesignForge Heuristic Design Audit
+ * Designo Heuristic Design Audit
  * ----------------------------------
  * Deterministic, explainable checks run against generated HTML. The score is the
  * severity-weighted share of checks that pass (high=3, medium=2, low=1).
- * It is a DesignForge-internal heuristic — NOT an industry standard, and it can't
+ * It is a Designo-internal heuristic — NOT an industry standard, and it can't
  * judge aesthetics. Contrast is only measured where colours are statically resolvable.
  */
 export const AUDIT_METHODOLOGY =
-  'Severity-weighted percentage of DesignForge automated heuristics that pass (high=3, medium=2, low=1). ' +
+  'Severity-weighted percentage of Designo automated heuristics that pass (high=3, medium=2, low=1). ' +
   'Checks cover structure, accessibility, typography, colour, spacing, responsiveness and code hygiene. ' +
   'It is not an industry-standard score and does not measure visual taste.';
 

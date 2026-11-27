@@ -5,8 +5,10 @@ dist
 !.env.example
 *.log
 .expo
-android/
-ios/
+/android/
+/ios/
+/apps/mobile/android/
+/apps/mobile/ios/
 service-account*.json
 google-services.json
 *.keystore

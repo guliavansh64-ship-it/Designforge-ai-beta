@@ -403,7 +403,7 @@ function ShareModal({ open, onClose, project, onChanged }: { open: boolean; onCl
   const count = Object.keys(project.sharedWith ?? {}).length;
   return (
     <Modal open={open} onClose={onClose} title="Share project">
-      <p className="muted mb-4 text-sm">Invite another DesignForge user by their Google email. Viewers can view and export; editors can also make manual edits. AI actions always stay with you (they use your Stitch account).</p>
+      <p className="muted mb-4 text-sm">Invite another Designo user by their Google email. Viewers can view and export; editors can also make manual edits. AI actions always stay with you (they use your Stitch account).</p>
       <div className="flex gap-2"><input className="field" type="email" placeholder="name@gmail.com" value={email} onChange={(e) => setEmail(e.target.value)} />
         <select className="field !w-28" value={role} onChange={(e) => setRole(e.target.value as any)}><option value="viewer">Viewer</option><option value="editor">Editor</option></select></div>
       <ErrorBox error={err} className="mt-3" />

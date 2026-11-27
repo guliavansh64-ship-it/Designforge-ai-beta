@@ -7,7 +7,7 @@ import { cx } from './ui';
  *   document via postMessage. We do NOT use srcdoc: srcdoc documents inherit the app's CSP, which would
  *   force us to weaken the app policy (inline scripts) to make Tailwind-based designs render.
  * - <iframe sandbox="allow-scripts"> WITHOUT allow-same-origin → opaque origin: generated code
- *   can't read DesignForge cookies/localStorage/DOM, can't navigate the top window, open popups or submit forms.
+ *   can't read Designo cookies/localStorage/DOM, can't navigate the top window, open popups or submit forms.
  * - Injected CSP: no network except the Tailwind runtime, Google Fonts and https images; connect-src 'none' blocks exfiltration.
  * - Editing happens through a tiny postMessage bridge injected into the document; the parent validates event.source.
  */

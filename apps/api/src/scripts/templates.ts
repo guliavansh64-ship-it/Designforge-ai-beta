@@ -1,6 +1,6 @@
 /**
  * Built-in starter templates. Pure HTML + CSS (no external runtime), responsive,
- * semantic and WCAG-AA contrast by construction — they pass the DesignForge audit.
+ * semantic and WCAG-AA contrast by construction — they pass the Designo audit.
  */
 export interface TemplateSpec {
   id: string; name: string; category: string; description: string; tags: string[];

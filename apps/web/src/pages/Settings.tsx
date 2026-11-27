@@ -52,7 +52,7 @@ export default function Settings() {
             <Button variant="secondary" icon={<LogOut className="h-4 w-4" />} onClick={logoutAll}>Sign out everywhere</Button>
             <Button variant="ghost" className="!text-red-600" icon={<Trash2 className="h-4 w-4" />} onClick={() => setDel(true)}>Delete account</Button>
           </div>
-          <p className="muted mt-3 text-xs">Your Stitch/Gemini keys are managed in Integrations. Payment details are held by Razorpay, never by DesignForge.</p>
+          <p className="muted mt-3 text-xs">Your Stitch/Gemini keys are managed in Integrations. Payment details are held by Razorpay, never by Designo.</p>
         </Section>
       </div>
       <Modal open={del} onClose={() => setDel(false)} title="Delete your account?">

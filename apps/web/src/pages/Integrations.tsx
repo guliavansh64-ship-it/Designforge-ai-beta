@@ -10,16 +10,16 @@ import { Badge, Button, Card, ErrorBox, Modal, PageHeader } from '../components/
 
 const PROVIDERS = {
   stitch: {
-    name: 'Google Stitch', icon: Sparkles, role: 'Generates UI screens, websites, and Logo & Brand Studio concepts directly in your Stitch account.',
+    name: 'Google Stitch', icon: Sparkles, role: 'Generates UI screens and websites in your own Stitch account.',
     keyUrl: 'https://stitch.withgoogle.com/settings', keyLabel: 'Stitch API key',
     steps: ['Open stitch.withgoogle.com and sign in with your Google account', 'Open Settings (profile menu) → API keys', 'Create a key and copy it', 'Paste it below — we verify it with a read-only call'],
     note: 'Generations count against your own Stitch quota (Google currently offers a free monthly allowance; limits are set by Google and may change).',
   },
   gemini: {
-    name: 'Gemini', icon: ImageIcon, role: 'Powers prompt enhancement and AI assistant chat.',
+    name: 'Gemini (image generation)', icon: ImageIcon, role: 'Used only by Logo Studio to create logo images. Stitch does not generate standalone images.',
     keyUrl: 'https://aistudio.google.com/app/apikey', keyLabel: 'Gemini API key',
     steps: ['Open Google AI Studio and sign in', 'Click "Create API key" (choose or create a Google Cloud project)', 'Copy the key', 'Paste it below — we verify it with a read-only call'],
-    note: 'Usage is billed/limited by Google on your own account.',
+    note: 'Usage is billed/limited by Google on your own account. Image models may require billing to be enabled on your Google Cloud project.',
   },
 } as const;
 type P = keyof typeof PROVIDERS;
@@ -52,7 +52,7 @@ export default function Integrations() {
     catch (e) { toast('error', (e as Error).message); } finally { setBusy(null); }
   };
   const disconnect = async (p: P) => {
-    if (!window.confirm(`Disconnect ${PROVIDERS[p].name}? The encrypted key is deleted from DesignForge immediately.`)) return;
+    if (!window.confirm(`Disconnect ${PROVIDERS[p].name}? The encrypted key is deleted from Designo immediately.`)) return;
     setBusy('dis' + p);
     try { const r = await api.del<{ revokeUrl: string }>(`/connections/${p}`); refresh(); setRevoke({ provider: p, url: r.revokeUrl }); }
     catch (e) { toast('error', (e as Error).message); } finally { setBusy(null); }
@@ -60,7 +60,7 @@ export default function Integrations() {
 
   return (
     <div>
-      <PageHeader title="Integrations" subtitle="Connect your own AI accounts. Signing in to DesignForge with Google does NOT give us access to Stitch — that's this separate, explicit step." />
+      <PageHeader title="Integrations" subtitle="Connect your own AI accounts. Signing in to Designo with Google does NOT give us access to Stitch — that's this separate, explicit step." />
 
       <Card className="mb-6 flex gap-3 border-emerald-500/20 bg-emerald-500/5 p-4 text-sm">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
@@ -115,13 +115,13 @@ export default function Integrations() {
           <div className="relative"><input id="apikey" autoComplete="off" spellCheck={false} type={show ? 'text' : 'password'} className="field pr-10 font-mono" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Paste your key" />
             <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 muted" aria-label={show ? 'Hide key' : 'Show key'}>{show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>
           <label className="mt-4 flex items-start gap-2 text-xs"><input type="checkbox" className="mt-0.5 accent-forge-500" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-            <span>I authorize DesignForge AI to store this key encrypted and use it <b>only for requests I make</b> (generating, editing and reading designs in my account). I can disconnect at any time.</span></label>
+            <span>I authorize Designo to store this key encrypted and use it <b>only for requests I make</b> (generating, editing and reading designs in my account). I can disconnect at any time.</span></label>
           <ErrorBox error={err} className="mt-4" />
           <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setOpen(null)}>Cancel</Button><Button loading={busy === 'connect'} disabled={key.trim().length < 20 || !consent}>Verify & connect</Button></div>
         </form>)}
       </Modal>
       <Modal open={!!revoke} onClose={() => setRevoke(null)} title="Disconnected">
-        <p className="text-sm">The encrypted key was deleted from DesignForge. For complete safety, also revoke/delete the key at the source so it can't be used anywhere.</p>
+        <p className="text-sm">The encrypted key was deleted from Designo. For complete safety, also revoke/delete the key at the source so it can't be used anywhere.</p>
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setRevoke(null)}>Done</Button><a href={revoke?.url} target="_blank" rel="noreferrer noopener"><Button icon={<ExternalLink className="h-4 w-4" />}>Revoke at source</Button></a></div>
       </Modal>
     </div>

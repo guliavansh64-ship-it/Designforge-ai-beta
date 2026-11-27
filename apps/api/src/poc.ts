@@ -18,7 +18,7 @@ const sdk = new Stitch(client);
 try {
   const { tools } = await client.listTools();
   console.log(`✔ Connected to Stitch MCP. ${tools.length} tools:`, tools.map((t: any) => t.name).join(', '));
-  const project = await sdk.createProject('DesignForge POC');
+  const project = await sdk.createProject('Designo POC');
   console.log('✔ Created project', project.projectId);
   console.log('… generating (30–120s)');
   const screen = (await project.generate('A modern SaaS analytics dashboard with sidebar navigation, KPI cards, a revenue chart and a recent orders table', { deviceType: 'DESKTOP', modelId: 'GEMINI_3_8_FLASH' })).first;

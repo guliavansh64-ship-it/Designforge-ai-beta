@@ -74,7 +74,7 @@ export default function Improve() {
   const itCost = CREDIT_COSTS.improve_iteration;
   return (
     <div>
-      <PageHeader eyebrow="Auto Design Improvement" title="Improve an existing design" subtitle="DesignForge audits the design against a transparent checklist, builds a fix plan, sends targeted instructions to Stitch, then re-audits and shows exactly what changed." />
+      <PageHeader eyebrow="Auto Design Improvement" title="Improve an existing design" subtitle="Designo audits the design against a transparent checklist, builds a fix plan, sends targeted instructions to Stitch, then re-audits and shows exactly what changed." />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div className="space-y-6">
@@ -139,7 +139,7 @@ export default function Improve() {
           <Card className="p-5">
             <p className="mb-3 text-sm font-medium">How it works</p>
             <ol className="space-y-1.5 text-xs">{IMPROVE_STAGES.map((s, i) => <li key={s} className="flex gap-2"><span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-forge-500/15 text-[10px] font-bold text-forge-600 dark:text-forge-300">{i + 1}</span><span className="muted">{s}</span></li>)}</ol>
-            <p className="mt-4 flex gap-2 rounded-xl bg-ink-100 p-3 text-[11px] muted dark:bg-ink-850"><Info className="h-3.5 w-3.5 shrink-0" />Scores come from DesignForge's own automated checks (contrast, headings, landmarks, spacing, breakpoints…). They're a useful checklist, not an objective measure of design quality.</p>
+            <p className="mt-4 flex gap-2 rounded-xl bg-ink-100 p-3 text-[11px] muted dark:bg-ink-850"><Info className="h-3.5 w-3.5 shrink-0" />Scores come from Designo's own automated checks (contrast, headings, landmarks, spacing, breakpoints…). They're a useful checklist, not an objective measure of design quality.</p>
           </Card>
         </div>
       </div>

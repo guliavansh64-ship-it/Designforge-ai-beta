@@ -59,7 +59,7 @@ export default function Credits() {
 
   return (
     <div>
-      <PageHeader title="Credits & Usage" subtitle="DesignForge credits pay for platform features. Your Google Stitch / Gemini quota is separate and managed by Google for your account." />
+      <PageHeader title="Credits & Usage" subtitle="Designo credits pay for platform features. Your Google Stitch / Gemini quota is separate and managed by Google for your account." />
       <ErrorBox error={err} className="mb-5" />
       {checking && <Card className="mb-5 p-4 text-sm">⏳ Confirming your UPI payment with ZetPay… keep this page open.</Card>}
       <div className="grid gap-6 lg:grid-cols-3">

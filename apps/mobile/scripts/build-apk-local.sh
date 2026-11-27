@@ -15,5 +15,5 @@ echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 (cd android && ./gradlew assembleRelease --no-daemon --console=plain)
 VERSION=$(node -p "require('./package.json').version")
 mkdir -p dist-apk
-cp android/app/build/outputs/apk/release/app-release.apk "dist-apk/Designo-${VERSION}.apk"
-echo "APK: $(pwd)/dist-apk/Designo-${VERSION}.apk"
+cp android/app/build/outputs/apk/release/app-release.apk "dist-apk/DesignForgeAI-${VERSION}.apk"
+echo "APK: $(pwd)/dist-apk/DesignForgeAI-${VERSION}.apk"

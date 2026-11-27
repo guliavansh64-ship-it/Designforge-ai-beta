@@ -72,12 +72,20 @@ const list = (a: string[]) => (a.length ? a.map((x) => `“${x}”`).join(', ') 
 export function builtInAnswer(q: string, p: ProjectFacts | null, a: AccountFacts): string {
   const m = q.toLowerCase();
   const has = (...w: string[]) => w.some((x) => m.includes(x));
-  if (has('credit', 'balance')) return `You have ${a.credits} credits on the ${a.plan} plan. Asking me questions is free. Generating costs 5 credits per screen, an edit 2 credits, HTML ZIP export 1, React export 2. PNG/HTML downloads are free.`;
+  if (has('credit', 'balance')) return `You have ${a.credits} credits on the ${a.plan} plan. Asking me questions is free. Creating a design costs 5 credits per screen, an edit 2 credits, HTML ZIP export 1, React export 2. PNG/HTML downloads are free.`;
   if (has('plan', 'subscription', 'renew', 'expire')) return `You are on the ${a.plan} plan${a.subscriptionStatus ? ` (status: ${a.subscriptionStatus})` : ''}.${a.renewsOrExpiresAt ? ` Your current period ends on ${new Date(a.renewsOrExpiresAt).toDateString()}.` : ''} Plans do not auto-renew — renew each month from Settings → Plans & credits.`;
   if (has('change', 'edit', 'modify', 'update', 'make it', 'redesign')) return 'I can only answer questions — I never change your project. To change a design, open the project, pick the page and use the “AI edit” tab, or create a new design in the Studio.';
   if (has('export', 'download', 'code', 'react', 'zip', 'html', 'figma')) return 'Open the project → a page → Download. PNG and HTML are free, HTML ZIP costs 1 credit and a runnable React project costs 2 credits.';
+  if (!p && /\b(hi|hello|hey|namaste)\b/.test(m)) return `Hi! 👋 I'm your free Designo assistant. You have ${a.credits} credits on the ${a.plan} plan. Pick a project above and ask me anything about it.`;
   if (!p) return `I can answer questions about your projects, credits and plan. You have ${a.credits} credits (${a.plan}). Pick a project above to ask about its pages, colours, fonts, buttons or status.`;
   const gen = p.pages.filter((x) => x.generated);
+  const kindName = p.kind === 'website' ? 'a website' : 'an app UI';
+  const words = m.replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+  const greet = words.length <= 3 && words.some((w) => ['hi', 'hello', 'hey', 'hii', 'namaste', 'yo', 'sup'].includes(w));
+  if (greet) return `Hi! 👋 I'm your free Designo assistant. You're looking at “${p.name}” — ${kindName} with ${p.pages.length} page${p.pages.length === 1 ? '' : 's'}. Ask me its pages, colours, fonts, buttons, status or what you can export.`;
+  if (has('name', 'called', 'title of')) return `This project is called “${p.name}”.${p.pages.length ? ` Its page${p.pages.length === 1 ? ' is' : 's are'}: ${p.pages.map((x) => x.name).join(', ')}.` : ''}`;
+  if (has('what is this', 'what is it', 'about this', 'describe', 'summary', 'summar', 'overview', 'type of', 'kind of')) return `“${p.name}” is ${kindName} designed for ${p.device.toLowerCase()}, with ${p.pages.length} page${p.pages.length === 1 ? '' : 's'} (${p.pages.map((x) => x.name).join(', ')}). ${gen[0]?.headings.length ? `Main headings: ${list(gen[0].headings.slice(0, 4))}.` : ''}`.trim();
+  if (has('help', 'what can you', 'what do you')) return `I answer questions for free — I never change anything. Try: “how many pages?”, “which colours and fonts?”, “what buttons are on ${p.pages[0]?.name ?? 'the first page'}?”, “is it still generating?”, “how many credits do I have?”.`;
   const named = p.pages.find((x) => m.includes(x.name.toLowerCase()));
   if (named) {
     if (!named.generated) return `“${named.name}” has not been generated yet.`;
@@ -97,13 +105,13 @@ export function builtInAnswer(q: string, p: ProjectFacts | null, a: AccountFacts
   if (has('device', 'mobile', 'desktop', 'tablet')) return `“${p.name}” is designed for ${p.device.toLowerCase()}. You can preview it on Mobile, Tablet or Desktop from the full-screen preview.`;
   if (has('when', 'created', 'date', 'old')) return `“${p.name}” was created ${new Date(p.createdAt).toDateString()} and last updated ${ago(p.updatedAt)}.`;
   if (has('share', 'collaborat')) return p.shared ? `“${p.name}” is shared with ${p.shared} people.` : `“${p.name}” is not shared with anyone.`;
-  return `“${p.name}” is a ${p.kind === 'website' ? 'website' : 'app UI'} for ${p.device.toLowerCase()} with ${p.pages.length} page${p.pages.length === 1 ? '' : 's'} (${p.pages.map((x) => x.name).join(', ')}), last updated ${ago(p.updatedAt)}. Ask me about its pages, colours, fonts, buttons, status, exports or your credits. (Connect your Gemini key in Integrations for fuller answers.)`;
+  return `“${p.name}” is ${p.kind === 'website' ? 'a website' : 'an app UI'} for ${p.device.toLowerCase()} with ${p.pages.length} page${p.pages.length === 1 ? '' : 's'} (${p.pages.map((x) => x.name).join(', ')}), last updated ${ago(p.updatedAt)}. Ask me about its pages, colours, fonts, buttons, status, exports or your credits. (Tip: connect your Gemini key in Settings → Integrations and I can answer any question in your own words.)`;
 }
 
 function factsForPrompt(p: ProjectFacts | null, a: AccountFacts) {
   return JSON.stringify({
     account: { plan: a.plan, credits: a.credits, subscriptionStatus: a.subscriptionStatus, periodEnds: a.renewsOrExpiresAt ? new Date(a.renewsOrExpiresAt).toDateString() : undefined },
-    pricing: { askingAssistant: 'free', generatePerScreen: 2, edit: 2, htmlZip: 1, react: 2, png: 'free', html: 'free', plansAutoRenew: false },
+    pricing: { askingAssistant: 'free', generatePerScreen: 5, edit: 2, htmlZip: 1, react: 2, png: 'free', html: 'free', plansAutoRenew: false },
     project: p && { name: p.name, kind: p.kind, device: p.device, created: new Date(p.createdAt).toDateString(), updated: ago(p.updatedAt), shared: p.shared, pages: p.pages, recentJobs: p.jobs.map((j) => ({ ...j, createdAt: ago(j.createdAt) })) },
   }).slice(0, 14_000);
 }

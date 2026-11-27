@@ -14,7 +14,7 @@ const uid = email
   : (await db().collection(C.connections).where('provider', '==', 'stitch').where('status', '==', 'active').limit(1).get()).docs[0]?.data().ownerId;
 if (!uid) { console.log('No active Stitch connection found. Connect a Stitch key in the app first.'); process.exit(1); }
 const t0 = Date.now();
-const pid = await stitchEngine.ensureProject(uid, 'DesignForge diagnostic (auto-deleted)');
+const pid = await stitchEngine.ensureProject(uid, 'Designo diagnostic (auto-deleted)');
 console.log('project ok', Date.now() - t0, 'ms');
 try {
   const r = await stitchEngine.generate(uid, pid, 'A simple mobile login screen for a coffee shop app with email, password and a sign-in button', 'MOBILE', model);

@@ -189,3 +189,33 @@ Redeploy the API, then check that `GET /health` shows `"build":"2026-11-30"`.
 - **Instant start:** the cached profile is shown at once and refreshed in the background.
 
 **Note on keys:** the `ENCRYPTION_KEY` on Render is different from the one used before. Keys saved under the old value show as "invalid" and must be pasted once again. The new key-setup screen asks for this automatically.
+
+## Build 2026-12-01: rename to Designo, mandatory permissions, 5 credits per screen
+
+Redeploy the API, then check that `GET /health` shows `"build":"2026-12-01"`.
+
+- **App name** is now **Designo** in the launcher label and every screen, push notification, invoice, README and the web app. The Android package ID stays `app.designforge.ai`, so the APK installs as an update and Firebase keeps working.
+- **Creating designs** (UI screens, websites, each screen of a full app) now costs **5 credits per screen** (`CREDIT_COSTS.generate_flash = 5`). Edits and exports are unchanged.
+- **Permissions are mandatory and verified.** A new local native module `apps/mobile/modules/designo-power` reads the real settings from Android:
+  - Notifications: the Android permission.
+  - Battery unrestricted: `PowerManager.isIgnoringBatteryOptimizations`.
+  - Background activity: `ActivityManager.isBackgroundRestricted`.
+
+  A tick appears only when Android confirms the setting. "Open Designo" stays locked until all three are on. If one is switched off later, the app returns to the permissions screen.
+- **Autostart** (Xiaomi, Oppo, Vivo…) has no public Android API that lets apps read it, so it is offered as a shortcut button rather than a verified tick.
+- **Assistant** built-in answers now understand greetings, "name of project", summaries and help.
+
+## Build 2026-12-02: Stitch-made logos and the curved bottom navigation
+
+Redeploy the API, then check that `GET /health` shows `"build":"2026-12-02"`.
+
+- **Logo Studio now uses Google Stitch** with the user's own Stitch key; Gemini is no longer used for logos.
+  - For each concept, Stitch designs a screen that contains only the logo on a white canvas.
+  - The server trims Stitch's rendering to the logo (`cropToLogo`), centres it on a 1024×1024 square, and then makes the transparent, dark and white versions plus the palette, as before.
+  - The `/projects/:id/logos` route now checks the **Stitch** connection.
+  - An empty canvas is rejected and the credits are refunded. If one concept fails, the finished ones are kept.
+- **Bottom navigation** (`apps/mobile/components/CurvedTabBar.tsx` and `tabBarShape.ts`) is a custom tab bar for the existing expo-router `<Tabs>`:
+  - Order: Dashboard · Projects · raised purple **+** (Studio) · Assistant · Settings.
+  - Look: curved notch, neon green/cyan border, dark glass body. Animations (breathing, rotating ring, halo, icon pop, ripple) respect the phone's reduce-motion setting.
+  - The bar hides while the keyboard is open. Screens keep `tabBarSpace(insets.bottom)` free at the bottom.
+  - Android back goes to Dashboard, then exits.

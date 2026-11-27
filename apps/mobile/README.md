@@ -1,4 +1,4 @@
-# Designo — Android app (Expo SDK 52, React Native 0.76, expo-router 4)
+# DesignForge AI — Android app (Expo SDK 52, React Native 0.76, expo-router 4)
 
 This is a native Android client for the same backend as the web app. It is **not a WebView wrapper**: all screens are native React Native. A WebView is used only to preview the generated design HTML, inside a sandbox with no network access.
 
@@ -34,7 +34,7 @@ The app is kept **outside** the root npm workspaces on purpose, because Metro an
 # one-time: JDK 17 + Android SDK (platform 35, build-tools 35, NDK 26.1.10909125, CMake 3.22.1)
 export ANDROID_HOME=~/Android/Sdk JAVA_HOME=/path/to/jdk17
 set -a; . credentials/keystore.env; set +a     # your upload key (never commit it)
-DF_ABIS=arm64-v8a npm run build:apk:local      # → dist-apk/Designo-<version>.apk
+DF_ABIS=arm64-v8a npm run build:apk:local      # → dist-apk/DesignForgeAI-<version>.apk
 ```
 - `DF_ABIS=arm64-v8a` builds for 64-bit ARM phones only (nearly all phones since 2019) and is about 3× faster. Omit it to support all ABIs. Packaging always matches the compiled ABIs (`plugins/withReleaseSigning.js`).
 - `DF_LOW_MEMORY=1` tunes Gradle for machines with less than 4 GB of RAM.

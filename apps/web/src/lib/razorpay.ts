@@ -21,7 +21,7 @@ export async function openCheckout(o: CheckoutOpts) {
   await loadRazorpay();
   const rzp = new window.Razorpay({
     key: o.keyId, order_id: o.orderId, subscription_id: o.subscriptionId, amount: o.amount, currency: 'INR',
-    name: 'DesignForge AI', description: o.description, prefill: { email: o.email, name: o.name },
+    name: 'Designo', description: o.description, prefill: { email: o.email, name: o.name },
     theme: { color: '#7c5cff' },
     handler: o.onSuccess,
     modal: { ondismiss: o.onDismiss, confirm_close: true },

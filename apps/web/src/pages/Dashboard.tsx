@@ -89,14 +89,14 @@ export default function Dashboard() {
           <Card className="p-5">
             <div className="flex items-center justify-between"><h2 className="font-display font-semibold">Credits</h2><Badge tone="forge">{me?.plan.name}</Badge></div>
             <p className="mt-3 font-display text-4xl font-semibold">{me?.credits ?? 0}</p>
-            <p className="muted text-xs">DesignForge credits · {used30} used in 30 days</p>
+            <p className="muted text-xs">Designo credits · {used30} used in 30 days</p>
             <div className="mt-4">{usage.data && <BarChart height={60} data={usage.data.usage.map((d) => ({ label: d.day, value: d.credits }))} />}</div>
             <div className="mt-4 flex gap-2"><Button size="sm" variant="secondary" icon={<Coins className="h-4 w-4" />} onClick={() => nav('/credits')}>Buy credits</Button><Button size="sm" variant="ghost" onClick={() => nav('/subscription')}>Upgrade</Button></div>
             <p className="muted mt-3 text-[11px]">Credits are separate from your Google Stitch quota, which is set by Google for your account.</p>
           </Card>
           <Card className="p-5">
             <h2 className="mb-3 font-display font-semibold">Connections</h2>
-            {[{ c: stitch, name: 'Google Stitch', role: 'UI, website & Logo Studio generation' }, { c: gemini, name: 'Gemini', role: 'Prompt enhancer & Assistant' }].map(({ c, name, role }) => (
+            {[{ c: stitch, name: 'Google Stitch', role: 'UI & website generation' }, { c: gemini, name: 'Gemini (images)', role: 'Logo Studio' }].map(({ c, name, role }) => (
               <div key={name} className="flex items-center gap-3 py-2">
                 {c?.connected ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : <AlertTriangle className="h-5 w-5 text-amber-500" />}
                 <div className="flex-1"><p className="text-sm font-medium">{name}</p><p className="muted text-xs">{c?.connected ? `Connected · key ${c.keyHint}` : role}</p></div>

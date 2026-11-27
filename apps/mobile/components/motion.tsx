@@ -1,5 +1,5 @@
 /**
- * DesignForge motion system (Reanimated 3, UI-thread animations).
+ * Designo motion system (Reanimated 3, UI-thread animations).
  *
  * Rules:
  *  - Springs for interaction, short timings for opacity. Nothing blocks input.

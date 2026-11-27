@@ -7,7 +7,7 @@ import { Animated } from './motion';
 const SRC = require('../assets/logo.png');
 
 /**
- * Circular DesignForge logo. When `animated`: a violet→ember ring slowly rotates around it and a soft
+ * Circular Designo logo. When `animated`: a violet→ember ring slowly rotates around it and a soft
  * glow breathes behind it (UI-thread Reanimated, static when the system "remove animations" is on).
  */
 export function Logo({ size = 84, animated = true, ring = true }: { size?: number; animated?: boolean; ring?: boolean }) {

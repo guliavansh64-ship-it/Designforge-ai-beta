@@ -63,7 +63,7 @@ export default function Subscription() {
 
   return (
     <div>
-      <PageHeader title="Subscription" subtitle="Plans unlock DesignForge features and monthly credits. AI generation always runs on your own Google account and its quota." />
+      <PageHeader title="Subscription" subtitle="Plans unlock Designo features and monthly credits. AI generation always runs on your own Google account and its quota." />
       {sub && current !== 'free' && (
         <Card className="mb-6 flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
           <div className="flex-1"><p className="font-medium">You're on <b>{me?.plan.name}</b> {sub.cycle !== 'one_time' && `(${sub.cycle})`}</p>
@@ -98,7 +98,7 @@ export default function Subscription() {
           );
         })}
       </div>
-      <p className="muted mt-4 text-xs">{plans.data?.paymentsProvider === 'zetpay' ? `Secure UPI payments via ZetPay (max ₹${(plans.data.maxAmountInr ?? 5000).toLocaleString('en-IN')} per payment). Plans are prepaid for 30 days / 1 year — no auto-debit; we remind you before expiry.` : 'Payments by Razorpay: UPI, cards, netbanking & wallets.'} Prices in INR. Lifetime covers DesignForge platform features for the life of the product; it does not include Google's Stitch/Gemini usage, which stays on your own account. Annual plans grant credits monthly.</p>
+      <p className="muted mt-4 text-xs">{plans.data?.paymentsProvider === 'zetpay' ? `Secure UPI payments via ZetPay (max ₹${(plans.data.maxAmountInr ?? 5000).toLocaleString('en-IN')} per payment). Plans are prepaid for 30 days / 1 year — no auto-debit; we remind you before expiry.` : 'Payments by Razorpay: UPI, cards, netbanking & wallets.'} Prices in INR. Lifetime covers Designo platform features for the life of the product; it does not include Google's Stitch/Gemini usage, which stays on your own account. Annual plans grant credits monthly.</p>
 
       <Card className="mt-8 overflow-hidden">
         <div className="flex items-center gap-2 border-b border-ink-200 p-4 dark:border-ink-800"><Receipt className="h-4 w-4" /><h2 className="font-display font-semibold">Billing history</h2></div>

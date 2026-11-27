@@ -34,7 +34,7 @@ billingPublicRouter.get('/billing/zetpay/return/:client', ah(async (req, res) =>
     try { status = (await checkZetpayOrder(orderId)).status; } catch { status = 'unknown'; }
   }
   const qs = `zp_order=${encodeURIComponent(orderId)}&status=${encodeURIComponent(status)}`;
-  const target = req.params.client === 'web' ? `${env.PUBLIC_WEB_URL.replace(/\/$/, '')}/credits?${qs}` : `designo://billing?${qs}`;
+  const target = req.params.client === 'web' ? `${env.PUBLIC_WEB_URL.replace(/\/$/, '')}/credits?${qs}` : `designforge://billing?${qs}`;
   const ok = status === 'paid';
   res.set('Cache-Control', 'no-store');
   res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Designo</title>

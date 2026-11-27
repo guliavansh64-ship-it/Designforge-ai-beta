@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeDb } from './fakeFirestore.js';
+import { CREDIT_COSTS } from '@designforge/shared';
 
 const fake = createFakeDb();
 vi.mock('../src/lib/firebase.js', () => ({ db: () => fake.db, C: { wallets: 'credit_wallets', creditTxns: 'credit_transactions' } }));
@@ -19,7 +20,7 @@ describe('credit ledger', () => {
     await credits.getBalance('u1');
     const results = await Promise.all(Array.from({ length: 5 }, () => credits.reserve('u1', 'generate_flash', 'same-key')));
     expect(results.filter((r) => !r.duplicate)).toHaveLength(1);
-    expect(await credits.getBalance('u1')).toBe(35);
+    expect(await credits.getBalance('u1')).toBe(40 - CREDIT_COSTS.generate_flash);
   });
   it('refunds exactly once', async () => {
     const r = await credits.reserve('u1', 'generate_pro', 'k-refund');

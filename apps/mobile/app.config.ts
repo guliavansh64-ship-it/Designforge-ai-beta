@@ -8,8 +8,8 @@ const googleServicesFile = process.env.GOOGLE_SERVICES_JSON ?? (fs.existsSync('.
 // Firebase service account) live ONLY on the backend and are never bundled into the APK.
 const config: ExpoConfig = {
   name: 'Designo',
-  slug: 'designo',
-  scheme: 'designo',
+  slug: 'designforge-ai',
+  scheme: 'designforge',
   version: process.env.EXPO_PUBLIC_ALLOW_API_OVERRIDE === '1' ? '1.0.0-test' : '1.0.0',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
@@ -37,7 +37,6 @@ const config: ExpoConfig = {
     '@react-native-google-signin/google-signin',
     // Monochrome status-bar icon + default channel, so pushes shown by Android while the app is CLOSED look right.
     ['expo-notifications', { icon: './assets/notification-icon.png', color: '#7c5cff', defaultChannel: 'default' }],
-    './plugins/withSystemPermissions',
     './plugins/withReleaseSigning',
     './plugins/withTestCleartext',
   ],

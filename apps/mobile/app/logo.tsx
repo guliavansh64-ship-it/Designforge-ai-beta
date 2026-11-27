@@ -60,9 +60,9 @@ export default function Logo() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
-      <Card index={0}><Row style={{ alignItems: 'flex-start' }}><Info size={18} color="#38bdf8" /><T size={12} muted style={{ flex: 1 }}>Logo Studio uses Google Stitch to design custom vector logos, brand palettes, and typography. Full brand kit exports available.</T></Row></Card>
+      <Card index={0}><Row style={{ alignItems: 'flex-start' }}><Info size={18} color="#38bdf8" /><T size={12} muted style={{ flex: 1 }}>Logos are designed by Google Stitch with your own Stitch key, then cropped and exported as PNG (light, transparent, dark, white). Wordmark concepts also get a true SVG. Check trademarks before commercial use.</T></Row></Card>
       {!allowed && <ErrorBox error={Object.assign(new Error('Logo Studio is available on Pro and above.'), { action: 'upgrade_plan' }) as any} />}
-      {allowed && !stitch?.connected && <ErrorBox error={Object.assign(new Error('Connect your Google Stitch key to generate logos.'), { action: 'open_integrations' }) as any} />}
+      {allowed && !stitch?.connected && <ErrorBox error={Object.assign(new Error('Connect your Stitch key to generate logos.'), { action: 'open_integrations' }) as any} />}
       {concepts.length > 0 && (
         <Card index={1} style={{ gap: 12 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>

@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
 import { Animated, Orbs, popIn } from '../components/motion';
 import { Logo } from '../components/Logo';
 import { PlanExpiredModal } from '../components/PlanExpiredModal';
-import { useOnboardingStep } from '../lib/onboarding';
+import { setStep, useOnboardingStep } from '../lib/onboarding';
+import { allGranted, readPermissions } from '../lib/permissions';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
@@ -35,6 +36,15 @@ function Gate() {
     else if (step === 'permissions' && at !== 'setup-permissions') router.replace('/setup-permissions');
     else if (step === 'done' && (inLogin || at === 'setup-keys' || at === 'setup-permissions')) router.replace('/');
   }, [me, loading, seg, router, step]);
+  // Permissions are mandatory: if one is switched off later, send the user back to the permissions step.
+  useEffect(() => {
+    if (!me || step !== 'done') return;
+    const uid = me.user.uid;
+    const verify = () => readPermissions().then((p) => { if (!allGranted(p)) setStep(uid, 'permissions'); }).catch(() => undefined);
+    verify();
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') verify(); });
+    return () => sub.remove();
+  }, [me, step]);
   // Tapping a push notification deep-links into the right screen — also when the tap is what
   // launched the app from a fully CLOSED state (cold start), which the listener alone would miss.
   useEffect(() => {

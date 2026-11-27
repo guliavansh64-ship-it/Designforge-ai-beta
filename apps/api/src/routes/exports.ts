@@ -109,7 +109,7 @@ exportsRouter.get('/versions/:vid/brand-kit', ah(async (req, res) => {
   files['colors.css'] = `:root {\n${v.logo.palette.map((c: string, i: number) => `  --brand-${i + 1}: ${c};`).join('\n')}\n}\n`;
   files['typography.md'] = `# Typography\n\n- Headings: **${v.logo.typography.heading}**\n- Body: **${v.logo.typography.body}**\n\n${v.logo.typography.why}\n`;
   files['brand-guide.html'] = v.html.replace(/src="\/api\/assets\/[^"]+"/g, (m: string) => m); // preview uses API URLs; logo files are in /logo
-  files['README.md'] = `# Brand kit\n\nGenerated with Designo via Google Stitch.\n\n- logo/light.png — on white\n- logo/transparent.png — background removed (best for flat logos)\n- logo/dark.png — preview on dark\n- logo/mono_white.png — single-colour white for dark backgrounds\n${v.logo.assets.svg ? '- logo/svg.svg — vector wordmark\n' : '- SVG: not available for raster AI logos (only wordmarks are true vectors)\n'}`;
+  files['README.md'] = `# Brand kit\n\nGenerated with Designo (logo designed by Google Stitch with your own Stitch key).\n\n- logo/light.png — on white\n- logo/transparent.png — background removed (best for flat logos)\n- logo/dark.png — preview on dark\n- logo/mono_white.png — single-colour white for dark backgrounds\n${v.logo.assets.svg ? '- logo/svg.svg — vector wordmark\n' : '- SVG: not available for raster logos (only wordmarks are true vectors)\n'}`;
   const zip = await zipFiles(files, 'brand-kit');
   res.setHeader('content-type', 'application/zip');
   res.setHeader('content-disposition', 'attachment; filename="brand-kit.zip"');

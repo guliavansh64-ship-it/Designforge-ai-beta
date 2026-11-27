@@ -36,7 +36,7 @@ export type Feature =
   | 'priority_queue'
   | 'project_sharing';
 
-/** Credit cost per operation — Designo platform credits, NOT Google quota. */
+/** Credit cost per operation — DesignForge platform credits, NOT Google quota. */
 export const CREDIT_COSTS = {
   generate_flash: 5,
   /** Legacy (retired Pro model) — kept only so old ledger entries still have a label. */

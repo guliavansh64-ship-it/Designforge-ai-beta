@@ -1,20 +1,23 @@
 import sharp from 'sharp';
 import { newId } from '../lib/crypto.js';
 import { db, C } from '../lib/firebase.js';
-import { stitchEngine, NO_QUESTIONS } from './stitch.js';
 import { putBlob } from './blobs.js';
 import { createVersion, loadProject } from './repo.js';
+import { AppError } from '../lib/errors.js';
 import type { JobCtx } from './jobs.js';
+import type { Project } from '@designforge/shared';
 
 /**
  * Logo & Brand Studio.
- * Generated via Google Stitch API (authenticated with the user's connected Stitch key).
- * Post-processing (real, deterministic, server-side with sharp):
- *  - transparent PNG: near-white background keyed to alpha
+ * Logos are DESIGNED BY GOOGLE STITCH (user's own Stitch key): Stitch renders a screen that contains only the
+ * logo on a white canvas; we take Stitch's own rendering (screenshot), trim it to the logo and square it.
+ * Gemini is NOT used for logos.
+ * Post-processing (all real, deterministic, server-side with sharp):
+ *  - transparent PNG: near-white background keyed to alpha (best for flat logos on white)
  *  - dark-mode preview: transparent logo composited on a dark surface
  *  - mono-white: alpha silhouette filled white for dark backgrounds
- *  - palette: dominant colours via k-means on downsampled pixels or extracted from design
- * SVG is extracted from the vector output or rendered as clean vector typography.
+ *  - palette: dominant colours via k-means on downsampled pixels
+ * SVG is offered ONLY for wordmarks (true vector text). Raster AI logos are PNG-only.
  */
 
 export interface LogoJobInput {
@@ -36,18 +39,44 @@ const TYPE_PAIRINGS: Record<string, { heading: string; body: string; why: string
 };
 
 export function buildLogoPrompt(i: LogoJobInput, style: string) {
+  const mark = style === 'Wordmark'
+    ? `The logo is ONLY the brand name "${i.brandName}" set in distinctive, custom-looking, highly legible lettering (one line).`
+    : style === 'Icon'
+      ? 'The logo is ONLY a simple, memorable symbol (no text at all), built from bold inline SVG shapes.'
+      : `The logo is a simple, memorable symbol (bold inline SVG shapes) placed ${style === 'Emblem' ? 'inside a badge / emblem shape with' : 'next to'} the brand name "${i.brandName}".`;
   return [
-    `Design a professional ${style.toLowerCase()} logo and visual brand identity for a brand named "${i.brandName}" in the ${i.industry} industry.`,
-    i.tagline ? `Brand tagline or idea: ${i.tagline}.` : '',
-    i.colorHints ? `Color scheme: ${i.colorHints}.` : 'Use a modern, cohesive palette of at most three colors.',
-    style === 'Wordmark'
-      ? `The primary logo mark is the brand name "${i.brandName}" designed with custom, clean vector SVG typography.`
-      : `Feature a prominent, unique vector logo symbol/mark (as an inline <svg> element) alongside or above the brand name "${i.brandName}".`,
-    'Display the primary logo mark centered on a pure white background card.',
-    'Below the logo, display the brand color palette swatches with hex color codes, and recommended typography pairings.',
-    'Keep the design crisp, flat, vector-styled, centered, with generous whitespace and high contrast.',
-    NO_QUESTIONS,
-  ].filter(Boolean).join(' ');
+    `Design a ${style.toLowerCase()} LOGO for a brand named "${i.brandName}" in the ${i.industry} industry.`,
+    i.tagline ? `Brand idea: ${i.tagline}.` : '',
+    mark,
+    i.colorHints ? `Colour direction: ${i.colorHints}.` : 'Use a restrained, premium palette of at most three colours.',
+    'LAYOUT (very important): the whole screen is a plain pure white (#FFFFFF) canvas. The logo is the ONLY thing on it — large, perfectly centred, with generous empty white space around it.',
+    'Do NOT add any navigation bar, header, footer, buttons, menus, cards, borders, frames, backgrounds, mockups, photos, captions, taglines, colour swatches, descriptions or any other UI or text. No shadows, flat vector look, crisp edges.',
+    'Generate exactly one screen now. Do not ask clarifying questions or propose a plan first: make sensible assumptions for anything unspecified.',
+  ].filter(Boolean).join('\n');
+}
+
+/** Crops Stitch's rendering down to the logo itself and centres it on a square white canvas. */
+export async function cropToLogo(shot: Buffer, size = 1024): Promise<Buffer> {
+  const flat = await sharp(shot).flatten({ background: '#ffffff' }).png().toBuffer();
+  const st = await sharp(flat).stats();
+  if (st.channels.slice(0, 3).every((c) => c.min >= 238)) throw new AppError(502, 'STITCH_EMPTY_RESULT', 'Stitch returned an empty canvas for this logo. Please try again.');
+  let trimmed: Buffer; let info: { width: number; height: number };
+  try {
+    const r = await sharp(flat).trim({ background: '#ffffff', threshold: 18 }).png().toBuffer({ resolveWithObject: true });
+    trimmed = r.data; info = r.info;
+  } catch { throw new AppError(502, 'STITCH_EMPTY_RESULT', 'Stitch returned an empty canvas for this logo. Please try again.'); }
+  if (info.width < 24 || info.height < 24) throw new AppError(502, 'STITCH_EMPTY_RESULT', 'Stitch returned an empty canvas for this logo. Please try again.');
+  const inner = Math.round(size * 0.78);
+  const fitted = await sharp(trimmed).resize(inner, inner, { fit: 'inside', withoutEnlargement: false, background: '#ffffff' }).png().toBuffer({ resolveWithObject: true });
+  return sharp({ create: { width: size, height: size, channels: 3, background: '#ffffff' } })
+    .composite([{ input: fitted.data, left: Math.round((size - fitted.info.width) / 2), top: Math.round((size - fitted.info.height) / 2) }])
+    .png().toBuffer();
+}
+
+/** Stitch operations injected by the job runner (keeps logos.ts free of a runtime import cycle with jobs.ts). */
+export interface LogoStitch {
+  ensureProject(project: Project): Promise<string>;
+  generate(stitchProjectId: string, prompt: string, label: string): Promise<{ html: string; image?: { data: Buffer; mime: string } }>;
 }
 
 export async function makeTransparent(png: Buffer, threshold = 238): Promise<Buffer> {
@@ -104,27 +133,6 @@ export function wordmarkSvg(name: string, color: string, font: string) {
 </svg>`;
 }
 
-function extractSvgFromHtml(html: string): string | undefined {
-  const matches = html.match(/<svg[\s\S]*?<\/svg>/gi);
-  if (!matches || !matches.length) return undefined;
-  for (const m of matches) {
-    if (m.length > 80 && !m.includes('lucide') && !m.includes('feather')) {
-      return m;
-    }
-  }
-  return matches[0];
-}
-
-function extractPaletteFromHtml(html: string): string[] {
-  const hexMatches = html.match(/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g);
-  if (!hexMatches) return [];
-  const excluded = new Set(['#fff', '#ffffff', '#000', '#000000', '#fafafa', '#f5f5f5', '#eee', '#eeeeee', '#e5e5e5', '#111', '#111111']);
-  const filtered = hexMatches
-    .map((h) => h.toLowerCase())
-    .filter((h) => !excluded.has(h));
-  return [...new Set(filtered)].slice(0, 5);
-}
-
 function brandPreviewHtml(name: string, assets: { light: string; dark: string; transparent: string }, palette: string[], type: { heading: string; body: string; why: string }, style: string) {
   const sw = palette.map((c) => `<div style="flex:1;min-width:90px"><div style="height:72px;border-radius:12px;background:${c};border:1px solid #0001"></div><code style="font-size:13px">${c}</code></div>`).join('');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${name} — ${style} logo</title>
@@ -135,76 +143,31 @@ function brandPreviewHtml(name: string, assets: { light: string; dark: string; t
 <h2>Typography recommendation</h2><p><strong>${type.heading}</strong> for headings, <strong>${type.body}</strong> for body. ${type.why}</p></main></body></html>`;
 }
 
-export async function runLogoJob(ctx: JobCtx): Promise<string[]> {
+export async function runLogoJob(ctx: JobCtx, stitch: LogoStitch): Promise<string[]> {
   const input = ctx.job.payload as LogoJobInput;
   const uid = ctx.job.ownerId;
   const project = await loadProject(ctx.job.projectId, uid, 'editor');
-
-  // Ensure Stitch project exists in user's Stitch account
-  if (!project.stitchProjectId) {
-    await ctx.stage('Creating Stitch project in your account', 8);
-    project.stitchProjectId = await ctx.timed(
-      stitchEngine.ensureProject(uid, `Designo · ${project.name}`),
-      'Create Stitch project'
-    );
-    await db().collection(C.projects).doc(project.id).update({ stitchProjectId: project.stitchProjectId });
-  }
-
   const styles = input.styles.length ? input.styles : ['Modern'];
   const ids: string[] = [];
-
+  const sid = await stitch.ensureProject(project as Project);
+  const errors: string[] = [];
   for (let i = 0; i < input.count; i++) {
     await ctx.checkCancelled();
     const style = styles[i % styles.length];
-    await ctx.stage(`Generating concept ${i + 1}/${input.count} (${style}) via Google Stitch`, 10 + (i / input.count) * 80);
-
-    const stitchPrompt = buildLogoPrompt(input, style);
-    const stitchRes = await ctx.timed(
-      stitchEngine.generate(uid, project.stitchProjectId, stitchPrompt, 'MOBILE', 'GEMINI_3_8_FLASH'),
-      'Stitch logo generation'
-    );
-
-    const type = TYPE_PAIRINGS[style] ?? TYPE_PAIRINGS.Modern;
-    const extractedSvg = extractSvgFromHtml(stitchRes.html);
-
-    let png: Buffer | undefined;
-    if (extractedSvg) {
-      try {
-        png = await sharp(Buffer.from(extractedSvg))
-          .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
-          .png()
-          .toBuffer();
-      } catch {
-        // Fall back to screenshot or wordmark
-      }
+    await ctx.stage(`Designing concept ${i + 1}/${input.count} (${style}) with Google Stitch`, 10 + (i / input.count) * 80);
+    let png: Buffer;
+    try {
+      const r = await stitch.generate(sid, buildLogoPrompt(input, style), `${style} logo`);
+      if (!r.image?.data?.length) throw new AppError(502, 'STITCH_EMPTY_RESULT', 'Stitch did not return a rendering for this logo. Please try again.');
+      png = await cropToLogo(r.image.data);
+    } catch (e) {
+      // Keep finished concepts; only fail the whole job when nothing could be made.
+      if (i === input.count - 1 && !ids.length) throw e;
+      if (e instanceof AppError && [401, 403, 412, 429].includes(e.status)) { if (!ids.length) throw e; break; }
+      errors.push((e as Error).message); continue;
     }
-
-    if (!png && stitchRes.image?.data) {
-      try {
-        png = await sharp(stitchRes.image.data).png().toBuffer();
-      } catch {}
-    }
-
-    if (!png) {
-      const fallbackSvg = wordmarkSvg(input.brandName, '#111827', type.heading.split(',')[0]);
-      png = await sharp(Buffer.from(fallbackSvg))
-        .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
-        .png()
-        .toBuffer();
-    }
-
     const transparent = await makeTransparent(png);
-    const [dark, mono, imgPalette] = await Promise.all([
-      onDark(transparent),
-      monoWhite(transparent),
-      extractPalette(png),
-    ]);
-
-    const htmlColors = extractPaletteFromHtml(stitchRes.html);
-    const palette = htmlColors.length >= 2 ? htmlColors : (imgPalette.length ? imgPalette : ['#111827', '#7c5cff']);
-
-    const finalSvg = extractedSvg ?? (style === 'Wordmark' ? wordmarkSvg(input.brandName, palette[0] ?? '#111827', type.heading.split(',')[0]) : undefined);
-
+    const [dark, mono, palette] = await Promise.all([onDark(transparent), monoWhite(transparent), extractPalette(png)]);
     const meta = { projectId: project.id, kind: 'logo', concept: i };
     const [a1, a2, a3, a4] = await Promise.all([
       putBlob(uid, png, 'image/png', { ...meta, variant: 'light' }),
@@ -212,23 +175,20 @@ export async function runLogoJob(ctx: JobCtx): Promise<string[]> {
       putBlob(uid, dark, 'image/png', { ...meta, variant: 'dark' }),
       putBlob(uid, mono, 'image/png', { ...meta, variant: 'mono_white' }),
     ]);
-
+    const type = TYPE_PAIRINGS[style] ?? TYPE_PAIRINGS.Modern;
+    const svg = style === 'Wordmark' ? wordmarkSvg(input.brandName, palette[0] ?? '#111', type.heading.split(',')[0]) : undefined;
     let svgId: string | undefined;
-    if (finalSvg) {
-      svgId = (await putBlob(uid, Buffer.from(finalSvg), 'image/svg+xml', { ...meta, variant: 'svg' })).id;
-    }
+    if (svg) svgId = (await putBlob(uid, Buffer.from(svg), 'image/svg+xml', { ...meta, variant: 'svg' })).id;
 
     const pageId = newId('pg_');
     const pages = [...project.pages, { id: pageId, name: `${style} concept ${project.pages.length + 1}` }];
     await db().collection(C.projects).doc(project.id).update({ pages });
     project.pages = pages;
-
     const v = await createVersion({
-      projectId: project.id, ownerId: uid, pageId, source: 'logo', prompt: stitchPrompt,
+      projectId: project.id, ownerId: uid, pageId, source: 'logo', prompt: buildLogoPrompt(input, style),
       html: brandPreviewHtml(input.brandName, { light: a1.url, dark: a3.url, transparent: a2.url }, palette, type, style),
       imageUrl: a1.url,
     });
-
     await db().collection(C.versions).doc(v.id).update({
       logo: { style, palette, typography: type, assets: { light: a1.id, transparent: a2.id, dark: a3.id, monoWhite: a4.id, svg: svgId ?? null } },
     });

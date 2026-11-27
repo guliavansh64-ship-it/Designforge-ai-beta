@@ -146,7 +146,7 @@ export function AuditPanel({ audit, onReaudit, onImprove, readOnly }: { audit?: 
   const failed = audit.checks.filter((c) => !c.passed);
   return (
     <div className="p-4 text-sm">
-      <div className="flex items-center gap-3"><ScoreRing score={audit.score} /><div><p className="font-semibold">DesignForge heuristic score</p><p className="muted text-xs">{audit.checks.length - failed.length}/{audit.checks.length} automated checks pass</p></div></div>
+      <div className="flex items-center gap-3"><ScoreRing score={audit.score} /><div><p className="font-semibold">Designo heuristic score</p><p className="muted text-xs">{audit.checks.length - failed.length}/{audit.checks.length} automated checks pass</p></div></div>
       <p className="muted mt-3 text-[11px] leading-relaxed">{(audit as any).methodology ?? 'Severity-weighted share of automated checks that pass. Not an industry-standard metric — use it as a checklist, not a verdict.'}</p>
       <ul className="mt-4 space-y-1.5">
         {[...failed, ...audit.checks.filter((c) => c.passed)].map((c) => (

@@ -30,7 +30,7 @@ export default function Dashboard() {
     { icon: Wand2, t: 'Improve', to: '/improve', col: c.green },
   ];
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 110 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />}>
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />}>
       <Appear><Row style={{ justifyContent: 'space-between' }}>
         <Row gap={12} style={{ flex: 1 }}><Logo size={44} ring={false} /><View style={{ flex: 1 }}><T muted size={13}>Welcome back 👋</T><T size={22} weight="800">{me?.user.displayName?.split(' ')[0] ?? 'Designer'}</T></View></Row>
         <PressScale onPress={() => router.push('/notifications')} accessibilityLabel={`Notifications, ${notifs.data?.unread ?? 0} unread`} style={{ padding: 8 }} scaleTo={0.85}>

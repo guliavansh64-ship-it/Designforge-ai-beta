@@ -10,7 +10,7 @@ beforeAll(async () => {
   const cfg = await import('../src/config.js');
   cfg.stripAmbientProviderCredentials();
   app = (await import('../src/app.js')).createApp();
-}, 30000);
+});
 
 describe('HTTP security', () => {
   it('health is public', async () => {

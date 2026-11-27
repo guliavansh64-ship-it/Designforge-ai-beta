@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeDb } from './fakeFirestore.js';
+import { CREDIT_COSTS } from '@designforge/shared';
 
 const fake = createFakeDb();
 const C = { wallets: 'credit_wallets', creditTxns: 'credit_transactions', jobs: 'generation_jobs', projects: 'projects', generations: 'generations' };
@@ -68,7 +69,7 @@ describe('full-app generation job', () => {
     expect(project.name).toBe('PulseFit');
     expect(project.pages.map((p: any) => p.name)).toEqual(['Home', 'Workouts', 'Active workout', 'Progress']);
     expect(project.pages.every((p: any) => p.currentVersionId)).toBe(true);
-    expect(await credits.getBalance('u1')).toBe(40 - 4 * 5);
+    expect(await credits.getBalance('u1')).toBe(40 - 4 * CREDIT_COSTS.generate_flash);
   });
 
   it('a transient Stitch error is retried automatically on the fast model', async () => {
@@ -82,7 +83,7 @@ describe('full-app generation job', () => {
     expect(prompts).toHaveLength(5);
     expect(models[2]).toBe('GEMINI_3_8_FLASH');
     expect(models[3]).toBe('GEMINI_3_5_FLASH_LITE');
-    expect(await credits.getBalance('u1')).toBe(40 - 4 * 5);
+    expect(await credits.getBalance('u1')).toBe(40 - 4 * CREDIT_COSTS.generate_flash);
   });
 
   it('a failing later screen keeps finished screens and refunds only that screen', async () => {
@@ -94,7 +95,7 @@ describe('full-app generation job', () => {
     expect(done.status).toBe('succeeded');
     expect(done.resultVersionIds).toHaveLength(3);
     expect(done.warnings[0]).toMatch(/could not be generated/);
-    expect(await credits.getBalance('u1')).toBe(40 - 3 * 5);
+    expect(await credits.getBalance('u1')).toBe(40 - 3 * CREDIT_COSTS.generate_flash);
   });
 
   it('automatic mode: a specific screen request gets exactly one (enhanced) screen on the given page', async () => {

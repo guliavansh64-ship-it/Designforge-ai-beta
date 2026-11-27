@@ -160,7 +160,10 @@ async function run(jobId: string) {
       case 'edit': case 'chat': resultVersionIds = await runEdit(ctx); break;
       case 'variants': resultVersionIds = await runVariants(ctx); break;
       case 'improve': resultVersionIds = await runImprove(ctx); break;
-      case 'logo': resultVersionIds = await runLogoJob(ctx); break;
+      case 'logo': resultVersionIds = await runLogoJob(ctx, {
+        ensureProject: (proj) => ensureStitchProject(proj, ctx.job.ownerId, ctx),
+        generate: (sid, prompt, label) => generateWithFallback(ctx, ctx.job.ownerId, sid, prompt, 'DESKTOP', undefined, label),
+      }); break;
     }
     await finish(job, 'succeeded', { resultVersionIds, stage: 'Completed' });
     await db().collection(C.generations).add({ ownerId: job.ownerId, projectId: job.projectId, jobId, type: job.type, status: 'succeeded', versionIds: resultVersionIds, createdAt: Date.now() });
