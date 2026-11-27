@@ -31,7 +31,7 @@ export interface DesignPlan {
   /** Completing an existing app: copy this screen's style instead of the planned theme. */
   matchStyle?: string;
 }
-export interface EnhanceInput { prompt: string; kind: ProjectKind; device: DeviceType; style?: string; category?: string; mode: OutputMode; maxScreens: number; pageName?: string; pageNames?: string[] }
+export interface EnhanceInput { prompt: string; kind: ProjectKind; device: DeviceType; style?: string; category?: string; mode: OutputMode; maxScreens: number; pageName?: string; pageNames?: string[]; /** Varies name/colours between runs of the same prompt. */ variation?: string }
 
 const NO_QUESTIONS = 'Generate exactly one screen now. Do not ask clarifying questions or propose a plan first: make sensible assumptions for anything unspecified.';
 
@@ -64,8 +64,8 @@ function geminiInstruction(i: EnhanceInput) {
   const modeRule = i.mode === 'single'
     ? `Return exactly 1 item in "screens"${i.pageName ? ` (the "${i.pageName}" ${unit === 'pages' ? 'page' : 'screen'})` : ''} and set isFullApp=false.`
     : i.mode === 'app'
-      ? `Return exactly ${i.maxScreens} ${unit} in "screens" that together form a complete ${surface}, and set isFullApp=true.`
-      : `Decide: if the request is broad (e.g. "create a fitness app", "a website for my bakery") set isFullApp=true and return ${i.maxScreens} ${unit} forming a complete ${surface}; if it describes one specific screen/page, set isFullApp=false and return exactly 1.`;
+      ? `Return EVERY ${unit === 'pages' ? 'page' : 'screen'} this ${surface} needs to fully deliver the request (at least 2; every ${unit === 'pages' ? 'page' : 'screen'} the user names, plus the ones the product obviously needs) and set isFullApp=true. Use as many as the request genuinely needs (a typical complete ${surface} has 4–8; bigger requests more); never pad with filler. The user can afford ${i.maxScreens}; only go beyond that when the user explicitly names more.`
+      : `Decide: if the request is broad (e.g. "create a fitness app", "a website for my bakery") set isFullApp=true and return every ${unit === 'pages' ? 'page' : 'screen'} the product needs (every one the user names; as many as genuinely needed, typically 4–8, never filler; the user can afford ${i.maxScreens}); if it describes one specific screen/page, set isFullApp=false and return exactly 1.`;
   return [
     'You are a senior product designer who writes prompts for Google Stitch, an AI that turns ONE text prompt into ONE UI screen.',
     `Turn the user's request into a production-quality design plan for a ${surface}.`,
@@ -73,7 +73,8 @@ function geminiInstruction(i: EnhanceInput) {
     'Rules:',
     '- "designBrief": 3-5 sentences about the product, audience, brand personality and visual language. It is prepended to every screen prompt.',
     '- "theme": one cohesive visual system. Colors as hex. Choose fonts available on Google Fonts. "corners" like "rounded 16px cards, pill buttons".',
-    `- "navigation": the ${i.kind === 'website' ? 'header navigation links' : 'bottom tab bar items (4-5)'} shared by all ${unit}.`,
+    `- "navigation": the ${i.kind === 'website' ? 'header navigation links' : 'bottom tab bar items (4-5)'} shared by all ${unit}. Each item MUST be the exact name of one of the ${unit} in "screens".`,
+    '- Everything must be specific to THIS request: original app name, original people/place/product names, numbers and copy. Never reuse stock sample content.',
     `- Each "screens[].prompt" (120-220 words) describes ONE ${unit === 'pages' ? 'page' : 'screen'} completely: layout from top to bottom, every section and component, realistic sample content (names, numbers, prices, dates), states such as selected tab, and key interactions. Mention the shared navigation with the current item active.`,
     '- Never ask questions. Make confident, specific product decisions.',
     '- Keep the first screen the most representative one (home / dashboard / landing).',
@@ -91,7 +92,8 @@ function validPlan(x: any): x is Omit<DesignPlan, 'enhancer'> {
 async function planWithGemini(uid: string, i: EnhanceInput): Promise<DesignPlan> {
   const json = await gemini.generateJson(uid, `${geminiInstruction(i)}\n\nUser request:\n"""${i.prompt.slice(0, 3000)}"""`, SCHEMA, 45_000);
   if (!validPlan(json)) throw new Error('Gemini returned an incomplete plan');
-  const limit = i.mode === 'single' ? 1 : i.maxScreens;
+  // Screens the user explicitly named are all kept (credits are checked by the job, all-or-nothing).
+  const limit = i.mode === 'single' ? 1 : 30;
   const screens = json.screens.slice(0, limit).map((s) => ({ name: s.name.trim().slice(0, 60) || 'Screen', prompt: s.prompt.trim().slice(0, 2500) }));
   return {
     enhancer: 'gemini',
@@ -107,127 +109,159 @@ async function planWithGemini(uid: string, i: EnhanceInput): Promise<DesignPlan>
 
 // ───────────────────────── Built-in planner ─────────────────────────
 
-interface Template { keys: RegExp; category: string; name: string; theme: ThemeSpec; brief: string; nav: string[]; screens: ScreenSpec[]; web: ScreenSpec[] }
-const T = (mood: string, primary: string, accent: string, background: string, dark: boolean, headingFont = 'Plus Jakarta Sans', bodyFont = 'Inter', corners = 'rounded 16px cards, pill-shaped buttons'): ThemeSpec =>
-  ({ mood, primary, accent, background, dark, headingFont, bodyFont, corners });
+/*
+ * The built-in planner (used when the user has no Gemini key) is PROMPT-DRIVEN: the app name, colours,
+ * fonts, screen list and every screen prompt come from the user's own request. Categories only add a
+ * STRUCTURE hint (which sections a screen usually has) — never fixed names, people or numbers, so two
+ * different requests never produce the same design.
+ */
+interface Category { keys: RegExp; category: string; mood: string; screens: ScreenSpec[] }
 
-const TEMPLATES: Template[] = [
-  {
-    keys: /\b(fitness|gym|workout|exercise|training|yoga|running|health tracker|steps)\b/i, category: 'fitness', name: 'PulseFit',
-    theme: T('energetic, bold, athletic', '#A3E635', '#22D3EE', '#0B0F17', true, 'Plus Jakarta Sans', 'Inter', 'rounded 20px cards, pill buttons'),
-    brief: 'PulseFit is a personal fitness companion for busy people who want to train smarter. It feels energetic and motivating, with bold numbers, progress rings and clear calls to action on a dark athletic canvas.',
-    nav: ['Home', 'Workouts', 'Progress', 'Profile'],
-    screens: [
-      { name: 'Home', prompt: 'Home dashboard. Greeting "Good morning, Alex" with avatar and notification bell. Hero card with three concentric activity rings (Move 520/600 kcal, Exercise 38/45 min, Stand 9/12 h). Row of stat tiles: steps 8,432, heart rate 72 bpm, sleep 7h 20m. "Today\'s plan" card with a 30-min HIIT workout, duration, intensity and a "Start workout" button. Horizontal carousel of recommended workouts with image, title and minutes. Weekly streak strip Mon-Sun with checkmarks. Bottom tab bar with Home active.' },
-      { name: 'Workouts', prompt: 'Workout library. Search bar and filter chips (All, Strength, HIIT, Yoga, Running, Mobility). Featured program banner "8-Week Strength Builder" with progress 3/8 weeks. Grid of workout cards with cover image, title, duration, difficulty badge and calories. Section "Quick sessions under 15 min". Bottom tab bar with Workouts active.' },
-      { name: 'Active workout', prompt: 'Live workout session for "Full Body HIIT". Large circular interval timer 00:45 with round 3 of 8, current exercise "Burpees" with an illustration, next-up preview "Mountain climbers". Live heart-rate zone bar (Zone 4, 156 bpm), calories burned 214, elapsed 18:32. Big pause and skip controls, a lock button and music mini-player. Bottom tab bar hidden for focus.' },
-      { name: 'Progress', prompt: 'Progress analytics. Segmented control Week / Month / Year. Line chart of workout minutes, bar chart of calories per day. Cards for personal records (Deadlift 120 kg, 5K 24:10), body metrics (weight 72.4 kg trend down), recovery score 82 with explanation. Achievement badges row. Bottom tab bar with Progress active.' },
-      { name: 'Profile', prompt: 'Profile and settings. Header with avatar, name, membership badge "Pro member" and stats (workouts 148, streak 12 days, hours 96). Goals card with editable targets. List rows: connected devices (Apple Watch, Garmin), reminders, units, privacy, subscription, help, log out. Bottom tab bar with Profile active.' },
-      { name: 'Nutrition', prompt: 'Nutrition tracker. Daily calories ring 1,640 / 2,200 kcal and macro bars (protein, carbs, fat). Meal sections Breakfast, Lunch, Dinner, Snacks with logged foods and calories plus "Add food" buttons. Water intake tracker with glasses. Bottom tab bar with Home active.' },
-    ],
-    web: [],
-  },
-  {
-    keys: /\b(food|restaurant|delivery|recipe|cafe|coffee|meal|grocery|pizza|bakery)\b/i, category: 'food', name: 'Savora',
-    theme: T('warm, appetizing, friendly', '#F97316', '#16A34A', '#FFF8F1', false, 'Poppins', 'Inter'),
-    brief: 'Savora is a food ordering app that makes discovering and ordering great local food effortless. Warm, appetizing colors, large food photography and fast, friendly interactions.',
-    nav: ['Home', 'Search', 'Orders', 'Profile'],
-    screens: [
-      { name: 'Home', prompt: 'Home feed. Delivery address selector "Home · 221B Baker St" and cart icon with badge. Search bar. Category chips with icons (Pizza, Burgers, Sushi, Healthy, Desserts). Promo banner "40% off your first order". "Popular near you" restaurant cards with photo, rating 4.7, delivery time 25-35 min, fee. "Order again" horizontal list. Bottom tab bar with Home active.' },
-      { name: 'Restaurant', prompt: 'Restaurant detail for "Bella Napoli". Hero image, rating, cuisine, delivery time, distance and a favourite button. Sticky menu category tabs (Popular, Pizzas, Pasta, Drinks). Menu item rows with photo, name, short description, price and "+" add button. Floating "View cart · 2 items · $28.40" bar at the bottom.' },
-      { name: 'Cart & checkout', prompt: 'Cart and checkout. Line items with quantity steppers, special instructions field, delivery address card, delivery time options (ASAP, schedule), payment method card, promo code input, price breakdown (subtotal, delivery, fees, tip selector) and a large "Place order · $31.90" button.' },
-      { name: 'Order tracking', prompt: 'Live order tracking. Map with courier route, ETA "Arriving in 12 min", progress steps (Confirmed, Preparing, On the way, Delivered) with the current step highlighted, courier card with photo, rating and call/chat buttons, order summary. Bottom tab bar with Orders active.' },
-      { name: 'Profile', prompt: 'Profile. Avatar and name, loyalty points card, saved addresses, payment methods, favourites, order history preview, notifications, help and log out. Bottom tab bar with Profile active.' },
-      { name: 'Search', prompt: 'Search and filters. Search field with recent searches, trending dishes chips, filter sheet preview (price, rating, dietary: vegan, gluten-free), and results list of dishes and restaurants. Bottom tab bar with Search active.' },
-    ],
-    web: [],
-  },
-  {
-    keys: /\b(shop|store|e-?commerce|fashion|clothing|marketplace|product|retail|sneaker)\b/i, category: 'e-commerce', name: 'Lumen Store',
-    theme: T('clean, premium, minimal', '#111827', '#6366F1', '#FFFFFF', false, 'DM Sans', 'Inter', 'rounded 14px cards, soft shadows'),
-    brief: 'Lumen Store is a premium shopping app with a calm, editorial look: generous white space, large product imagery and a frictionless path from discovery to checkout.',
-    nav: ['Home', 'Categories', 'Wishlist', 'Cart', 'Profile'],
-    screens: [
-      { name: 'Home', prompt: 'Shop home. Logo, search and cart icons. Hero campaign banner "Autumn Collection" with CTA. Category circles (Women, Men, Shoes, Bags, Beauty). "New arrivals" product grid with image, brand, name, price and heart. "Trending now" carousel and a limited-time deal card with countdown. Bottom tab bar with Home active.' },
-      { name: 'Product listing', prompt: 'Product listing for "Sneakers". Sort and filter bar, active filter chips (Size 42, Under $150), two-column product grid with rating, price, discount badge and color swatches. Bottom tab bar with Categories active.' },
-      { name: 'Product detail', prompt: 'Product detail for "Aero Runner 2". Image gallery with dots, brand, name, rating 4.8 (1,204 reviews), price $129 with old price, color swatches, size selector grid, delivery estimate, expandable details/materials, reviews preview, sticky "Add to cart" and wishlist buttons.' },
-      { name: 'Cart', prompt: 'Shopping cart with product rows (image, name, size, color, quantity stepper, price), saved for later, promo code field, order summary (subtotal, shipping, tax, total) and "Checkout" button. Bottom tab bar with Cart active.' },
-      { name: 'Profile', prompt: 'Account. Avatar, name, membership tier, orders list with statuses, addresses, payment methods, returns, notification settings, help and log out. Bottom tab bar with Profile active.' },
-      { name: 'Checkout', prompt: 'Checkout with stepper (Shipping, Payment, Review), address form, shipping method options with prices, card payment form with Apple/Google Pay buttons, order summary and "Pay $142.30" button.' },
-    ],
-    web: [],
-  },
-  {
-    keys: /\b(finance|bank|banking|wallet|budget|expense|payment|crypto|invest|money|fintech)\b/i, category: 'finance', name: 'Vaultly',
-    theme: T('trustworthy, modern, calm', '#2563EB', '#10B981', '#F8FAFC', false, 'Manrope', 'Inter', 'rounded 18px cards, subtle borders'),
-    brief: 'Vaultly is a modern money app that helps people see, save and grow their money with confidence. Calm blues, crisp numbers and clear charts.',
-    nav: ['Home', 'Cards', 'Payments', 'Insights', 'Profile'],
-    screens: [
-      { name: 'Home', prompt: 'Banking home. Greeting, total balance $12,480.55 with show/hide toggle, quick actions (Send, Request, Top up, Pay bills), account cards carousel, spending this month vs budget bar, recent transactions list with merchant logos, categories and amounts. Bottom tab bar with Home active.' },
-      { name: 'Cards', prompt: 'Cards screen with a realistic virtual card (masked number, expiry), freeze toggle, spending limit slider, card settings (online payments, contactless, ATM), and recent card transactions. Bottom tab bar with Cards active.' },
-      { name: 'Send money', prompt: 'Send money flow: recent contacts row with avatars, search contacts, amount keypad with large amount display $250.00, note field, source account selector, fee info and "Send" button. Bottom tab bar with Payments active.' },
-      { name: 'Insights', prompt: 'Spending insights: month selector, donut chart by category (Food 32%, Transport 18%, Shopping 24%...), category list with amounts and change vs last month, savings goal progress cards and a smart tip card. Bottom tab bar with Insights active.' },
-      { name: 'Profile', prompt: 'Profile and security: avatar, verified badge, personal details, security (Face ID, 2FA, change PIN), linked accounts, statements, support and log out. Bottom tab bar with Profile active.' },
-      { name: 'Transactions', prompt: 'Transaction history with search, filter chips by category and date, grouped by day with totals, each row showing merchant, category icon, time and amount colored by debit/credit. Bottom tab bar with Home active.' },
-    ],
-    web: [],
-  },
-  {
-    keys: /\b(travel|trip|hotel|flight|booking|tour|vacation|airbnb)\b/i, category: 'travel', name: 'Wandr',
-    theme: T('adventurous, airy, inspiring', '#0EA5E9', '#F59E0B', '#F8FAFC', false, 'Outfit', 'Inter'),
-    brief: 'Wandr is a travel planning app that inspires trips and makes booking stays and experiences simple, with big destination photography and airy layouts.',
-    nav: ['Explore', 'Trips', 'Saved', 'Profile'],
-    screens: [
-      { name: 'Explore', prompt: 'Explore home: "Where to next?" search card with destination, dates and guests, category chips (Beach, Mountains, City, Countryside), featured destination cards with photo and price from, "Top experiences" carousel. Bottom tab bar with Explore active.' },
-      { name: 'Search results', prompt: 'Stay search results for "Bali, 12-18 Jun, 2 guests": filter bar, map/list toggle, listing cards with photo carousel, rating, price per night and total, and favourite heart. Bottom tab bar with Explore active.' },
-      { name: 'Listing detail', prompt: 'Villa detail: photo gallery, title, rating and reviews, host card, amenities grid, location map preview, availability calendar, house rules, and sticky booking bar with price and "Reserve" button.' },
-      { name: 'Trips', prompt: 'My trips: upcoming trip card with countdown, itinerary timeline by day (flight, check-in, activities), documents, and past trips list. Bottom tab bar with Trips active.' },
-      { name: 'Profile', prompt: 'Profile: avatar, traveler level, saved payment, preferences, notifications, help and log out. Bottom tab bar with Profile active.' },
-      { name: 'Saved', prompt: 'Saved wishlists as collage cards (Summer 2026, Weekend getaways) and saved places grid. Bottom tab bar with Saved active.' },
-    ],
-    web: [],
-  },
-  {
-    keys: /\b(education|learning|course|school|study|quiz|tutor|language)\b/i, category: 'education', name: 'Learnly',
-    theme: T('friendly, focused, encouraging', '#7C3AED', '#F59E0B', '#FAFAFF', false, 'Nunito', 'Inter'),
-    brief: 'Learnly is a learning app that keeps students motivated with bite-size lessons, streaks and clear progress, in a friendly, focused style.',
-    nav: ['Home', 'Courses', 'Practice', 'Profile'],
-    screens: [
-      { name: 'Home', prompt: 'Learning home: greeting with streak flame 14 days and XP, "Continue learning" course card with progress bar, daily goal ring, recommended courses carousel, upcoming live class card. Bottom tab bar with Home active.' },
-      { name: 'Courses', prompt: 'Course catalog with search, category chips, featured course banner, course cards (thumbnail, title, instructor, rating, lessons, level). Bottom tab bar with Courses active.' },
-      { name: 'Lesson', prompt: 'Lesson player: video area, lesson title, progress through module, notes and transcript tabs, key takeaways, "Mark complete" and next lesson buttons.' },
-      { name: 'Quiz', prompt: 'Quiz question screen: progress 4/10, timer, question text, four answer options with one selected, hint button, and "Check answer" button. Bottom tab bar with Practice active.' },
-      { name: 'Profile', prompt: 'Profile: avatar, level, badges, certificates, weekly activity chart, settings and log out. Bottom tab bar with Profile active.' },
-      { name: 'Leaderboard', prompt: 'Weekly leaderboard with top-3 podium, ranked list with avatars and XP, and the current user highlighted. Bottom tab bar with Practice active.' },
-    ],
-    web: [],
-  },
+const CATEGORIES: Category[] = [
+  { keys: /\b(fitness|gym|workout|exercise|training|yoga|running|health|steps|diet|nutrition)\b/i, category: 'fitness', mood: 'energetic, motivating, athletic', screens: [
+    { name: 'Home', prompt: 'today’s summary with progress visuals, key stats, today’s plan with a clear start action, recommendations and a streak/consistency element' },
+    { name: 'Workouts', prompt: 'searchable library with filter chips, a featured programme and cards showing duration, difficulty and effort' },
+    { name: 'Activity', prompt: 'an in-progress session or tracker: big live metric, timer/progress, current step, controls and what comes next' },
+    { name: 'Progress', prompt: 'period switcher, charts over time, personal records, body or health metrics and achievements' },
+    { name: 'Profile', prompt: 'user header with stats, goals, connected devices, reminders, preferences and account actions' },
+  ] },
+  { keys: /\b(food|restaurant|delivery|recipe|cafe|coffee|meal|grocery|pizza|bakery|kitchen)\b/i, category: 'food', mood: 'warm, appetising, inviting', screens: [
+    { name: 'Home', prompt: 'location selector, search, category chips, a promotion, popular places/items with photos and ratings, and a reorder section' },
+    { name: 'Menu', prompt: 'place or menu detail: hero image, rating and timing, category tabs, item rows with photo, description, price and add button, and a cart summary bar' },
+    { name: 'Cart', prompt: 'items with quantity steppers and options, add-ons, promo code, cost breakdown and checkout button' },
+    { name: 'Orders', prompt: 'live order status with a progress timeline and map/ETA, courier or pickup details, and past orders' },
+    { name: 'Profile', prompt: 'user header, rewards, saved addresses, payment methods, favourites, settings and help' },
+  ] },
+  { keys: /\b(shop|store|e-?commerce|fashion|clothing|marketplace|retail|sneaker|boutique)\b/i, category: 'e-commerce', mood: 'stylish, premium, editorial', screens: [
+    { name: 'Home', prompt: 'search, campaign banner, category shortcuts, new arrivals grid and a timed deal' },
+    { name: 'Product', prompt: 'image gallery, title, price, rating, variant selectors, description, reviews and add-to-cart' },
+    { name: 'Cart', prompt: 'line items with variants and quantity, saved for later, promo code, totals and checkout' },
+    { name: 'Checkout', prompt: 'step indicator, address, delivery options, payment methods, order summary and pay button' },
+    { name: 'Profile', prompt: 'account header, orders with statuses, addresses, payments, returns and settings' },
+  ] },
+  { keys: /\b(finance|bank|banking|wallet|budget|expense|payment|crypto|invest|money|fintech|earn|earning|income|payout)\b/i, category: 'finance', mood: 'trustworthy, precise, calm', screens: [
+    { name: 'Home', prompt: 'balance overview with privacy toggle, quick actions, accounts or cards, a budget/goal element and recent transactions' },
+    { name: 'Transactions', prompt: 'searchable history with filters, grouped by day with totals and clear credit/debit colours' },
+    { name: 'Insights', prompt: 'period selector, category breakdown chart, trend vs previous period, goals and a smart tip' },
+    { name: 'Cards', prompt: 'card or account management: visual card, freeze/limits controls, settings and related activity' },
+    { name: 'Profile', prompt: 'verified user header, personal details, security options, linked accounts, statements and support' },
+  ] },
+  { keys: /\b(travel|trip|hotel|flight|booking|tour|vacation|stay)\b/i, category: 'travel', mood: 'inspiring, airy, adventurous', screens: [
+    { name: 'Explore', prompt: 'search card for destination, dates and guests, category chips, featured destinations and experiences' },
+    { name: 'Details', prompt: 'gallery, title, rating, amenities, host or provider, map, reviews and a sticky booking bar' },
+    { name: 'Trips', prompt: 'upcoming trip with countdown, day-by-day itinerary, documents and past trips' },
+    { name: 'Saved', prompt: 'wishlist collections and saved places' },
+    { name: 'Profile', prompt: 'traveller header, preferences, payments, notifications and help' },
+  ] },
+  { keys: /\b(education|learning|course|school|study|quiz|tutor|language|class)\b/i, category: 'education', mood: 'friendly, encouraging, focused', screens: [
+    { name: 'Home', prompt: 'continue-learning card with progress, daily goal, streak, recommendations and upcoming sessions' },
+    { name: 'Courses', prompt: 'catalogue with search, categories, featured course and course cards with level and rating' },
+    { name: 'Lesson', prompt: 'lesson player or reader with progress through the module, notes, key points and next action' },
+    { name: 'Practice', prompt: 'an interactive exercise or quiz with progress, question, options and feedback' },
+    { name: 'Profile', prompt: 'level, badges, certificates, activity chart and settings' },
+  ] },
+  { keys: /\b(social|chat|messag|community|dating|creator|forum|network|friends)\b/i, category: 'social', mood: 'lively, personal, expressive', screens: [
+    { name: 'Home', prompt: 'personalised feed of posts with media, reactions and comments, plus stories or highlights' },
+    { name: 'Discover', prompt: 'search, trending topics, suggested people or groups and featured content' },
+    { name: 'Messages', prompt: 'conversation list with unread states and an open chat with message bubbles and composer' },
+    { name: 'Notifications', prompt: 'grouped activity with avatars, actions and timestamps' },
+    { name: 'Profile', prompt: 'cover and avatar, bio, stats, content grid and edit/follow actions' },
+  ] },
 ];
 
-const GENERIC: Template = {
-  keys: /./, category: 'app', name: 'Nova',
-  theme: T('modern, clean, confident', '#6366F1', '#EC4899', '#FFFFFF', false),
-  brief: 'A modern, polished product with a clean interface, clear hierarchy and delightful details.',
-  nav: ['Home', 'Explore', 'Activity', 'Profile'],
-  screens: [
-    { name: 'Home', prompt: 'Home dashboard: header with greeting and avatar, hero summary card with key metric, quick action buttons, content feed of cards with images, titles and meta info, and a highlights section. Bottom tab bar with Home active.' },
-    { name: 'Explore', prompt: 'Explore: search bar, filter chips, featured banner, grid of content cards, and trending list. Bottom tab bar with Explore active.' },
-    { name: 'Detail', prompt: 'Detail screen for a featured item: large image, title, rating, description, key attributes, related items, and a primary action button.' },
-    { name: 'Activity', prompt: 'Activity and notifications: segmented tabs, grouped timeline of events with icons, timestamps and actions. Bottom tab bar with Activity active.' },
-    { name: 'Profile', prompt: 'Profile and settings: avatar, stats, preferences list, notifications, privacy, help and log out. Bottom tab bar with Profile active.' },
-    { name: 'Onboarding', prompt: 'Onboarding/welcome screen: illustration, headline, value proposition, page dots, "Get started" and "Sign in" buttons.' },
-  ],
-  web: [],
-};
+const GENERIC: Category = { keys: /./, category: 'app', mood: 'modern, clean, confident', screens: [
+  { name: 'Home', prompt: 'the main dashboard for this product: a summary of what matters most, primary actions and the most important content' },
+  { name: 'Explore', prompt: 'search, filters and browsable content specific to this product' },
+  { name: 'Details', prompt: 'the detail view of the product’s main item with all its key information and the main action' },
+  { name: 'Activity', prompt: 'history, progress or notifications relevant to this product' },
+  { name: 'Profile', prompt: 'user header, stats, preferences, account and help' },
+] };
 
 const WEB_PAGES: ScreenSpec[] = [
-  { name: 'Home', prompt: 'Landing page: sticky header with logo, navigation and CTA button; hero with headline, sub-headline, primary/secondary CTAs and hero image; trust logos; 3-column features; testimonial section; pricing or offer highlight; final CTA band; footer with links, contact and social icons.' },
-  { name: 'About', prompt: 'About page: header, story section with image, mission and values cards, team grid with photos and roles, milestones timeline, CTA band and footer.' },
-  { name: 'Services', prompt: 'Services/Pricing page: header, intro, service or pricing cards with features and CTA, comparison table, FAQ accordion, CTA band and footer.' },
-  { name: 'Contact', prompt: 'Contact page: header, contact form (name, email, message), contact details with icons, map, opening hours, FAQ snippet and footer.' },
-  { name: 'Blog', prompt: 'Blog page: header, featured article hero, category filter, article cards grid with image, title, excerpt, author and date, newsletter signup and footer.' },
-  { name: 'Gallery', prompt: 'Gallery/portfolio page: header, masonry grid of project images with captions and filters, case study highlight, CTA and footer.' },
+  { name: 'Home', prompt: 'sticky header with logo, navigation and CTA; hero with headline, sub-headline, CTAs and imagery; proof/trust; key features; testimonials; offer highlight; final CTA; footer' },
+  { name: 'About', prompt: 'story with imagery, mission and values, team, milestones, CTA and footer' },
+  { name: 'Services', prompt: 'intro, service or pricing cards with features and CTA, comparison, FAQ, CTA and footer' },
+  { name: 'Contact', prompt: 'contact form, contact details, map, opening hours, FAQ snippet and footer' },
+  { name: 'Blog', prompt: 'featured article, category filter, article cards with image, title, excerpt, author and date, newsletter signup and footer' },
+  { name: 'Gallery', prompt: 'filterable grid of work with captions, a highlighted case study, CTA and footer' },
 ];
+
+const PALETTES: (ThemeSpec & { tags: string })[] = [
+  { tags: 'dark neon bold energetic', mood: 'bold, high-contrast', primary: '#A3E635', accent: '#22D3EE', background: '#0B0F17', dark: true, headingFont: 'Space Grotesk', bodyFont: 'Inter', corners: 'rounded 20px cards, pill buttons' },
+  { tags: 'dark luxury premium gold elegant', mood: 'luxurious, refined', primary: '#D4AF37', accent: '#F5E6C8', background: '#0E0E10', dark: true, headingFont: 'Playfair Display', bodyFont: 'Inter', corners: 'subtle 12px corners, thin borders' },
+  { tags: 'dark purple creative', mood: 'creative, immersive', primary: '#8B5CF6', accent: '#F472B6', background: '#0F0B1E', dark: true, headingFont: 'Sora', bodyFont: 'Inter', corners: 'rounded 18px glassy cards' },
+  { tags: 'dark blue tech calm', mood: 'focused, technical', primary: '#3B82F6', accent: '#10B981', background: '#0B1220', dark: true, headingFont: 'Manrope', bodyFont: 'Inter', corners: 'rounded 14px cards' },
+  { tags: 'dark red orange energetic', mood: 'intense, dynamic', primary: '#F97316', accent: '#EF4444', background: '#121212', dark: true, headingFont: 'Outfit', bodyFont: 'Inter', corners: 'rounded 16px cards, bold buttons' },
+  { tags: 'light minimal clean blue trustworthy', mood: 'clean, trustworthy', primary: '#2563EB', accent: '#0EA5E9', background: '#F8FAFC', dark: false, headingFont: 'Plus Jakarta Sans', bodyFont: 'Inter', corners: 'rounded 16px cards, pill buttons' },
+  { tags: 'light warm orange food friendly', mood: 'warm, appetising', primary: '#EA580C', accent: '#FACC15', background: '#FFF8F1', dark: false, headingFont: 'Epilogue', bodyFont: 'Inter', corners: 'rounded 20px cards with soft shadows' },
+  { tags: 'light green fresh nature health eco', mood: 'fresh, natural', primary: '#16A34A', accent: '#84CC16', background: '#F6FBF4', dark: false, headingFont: 'DM Sans', bodyFont: 'DM Sans', corners: 'rounded 18px cards' },
+  { tags: 'light pastel pink playful soft cute', mood: 'playful, soft', primary: '#EC4899', accent: '#A78BFA', background: '#FFF7FB', dark: false, headingFont: 'Nunito', bodyFont: 'Nunito', corners: 'very rounded 24px cards, pill buttons' },
+  { tags: 'light purple modern creative', mood: 'modern, expressive', primary: '#7C3AED', accent: '#F59E0B', background: '#FAF8FF', dark: false, headingFont: 'Sora', bodyFont: 'Inter', corners: 'rounded 16px cards' },
+  { tags: 'light teal calm medical wellness', mood: 'calm, caring', primary: '#0D9488', accent: '#38BDF8', background: '#F4FBFB', dark: false, headingFont: 'Manrope', bodyFont: 'Inter', corners: 'rounded 16px cards, soft shadows' },
+  { tags: 'light black white editorial fashion minimal', mood: 'editorial, minimal', primary: '#111111', accent: '#E11D48', background: '#FFFFFF', dark: false, headingFont: 'Playfair Display', bodyFont: 'Inter', corners: 'sharp 4px corners, generous whitespace' },
+  { tags: 'light yellow sunny friendly fun', mood: 'sunny, upbeat', primary: '#CA8A04', accent: '#2563EB', background: '#FFFBEB', dark: false, headingFont: 'Outfit', bodyFont: 'Inter', corners: 'rounded 20px cards' },
+  { tags: 'light red bold sporty', mood: 'bold, sporty', primary: '#DC2626', accent: '#111827', background: '#FAFAFA', dark: false, headingFont: 'Archivo', bodyFont: 'Inter', corners: 'rounded 12px cards, strong buttons' },
+];
+const COLOR_WORDS: Record<string, string> = { red: '#DC2626', orange: '#EA580C', yellow: '#CA8A04', gold: '#D4AF37', green: '#16A34A', teal: '#0D9488', cyan: '#06B6D4', blue: '#2563EB', navy: '#1E3A8A', purple: '#7C3AED', violet: '#7C3AED', pink: '#EC4899', black: '#111111', brown: '#92400E', lime: '#84CC16' };
+
+/** Screens that are steps in a flow rather than tabs in the bar. */
+export const NOT_A_TAB = /\b(log ?in|sign ?in|sign ?up|register|onboarding|splash|welcome|checkout|payment|verify|otp|forgot)\b/i;
+
+/** Stable 32-bit hash: the same request always gives the same plan, different requests differ. */
+function hash(s: string) { let h = 2166136261; for (let k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619); } return h >>> 0; }
+
+const STOP = new Set('a an the my our your for with and or to of in on at by app apps application website site web mobile android ios create make build design develop new simple modern creative complete full entire whole beautiful best good nice cool platform that which screen screens page pages section sections i we want need please like some all every called named using based dark light neon pastel calm minimal clean bold soft look theme style colour color colors colours red orange yellow gold green teal cyan blue navy purple violet pink black white brown lime premium luxury elegant cute playful fresh login signin signup register onboarding splash welcome dashboard home settings profile checkout cart account service services seniors kids users people'.split(' '));
+const keywords = (req: string) => (req.toLowerCase().match(/[a-z]+/g) ?? []).filter((w) => w.length > 2 && !STOP.has(w));
+
+/** An original brand name built from the request ("a creative fitness app" → e.g. "Fitloop"). */
+export function brandName(req: string, seed = hash(req.toLowerCase())): string {
+  const w = keywords(req)[0] ?? 'nova';
+  const cut = w.search(/[aeiouy][^aeiouy]/);
+  const root = w.length <= 5 ? w : w.slice(0, Math.max(3, cut + 2));
+  const SUF = ['ly', 'io', 'ify', 'hub', 'nest', 'loop', 'wave', 'mint', 'base', 'go', 'spot', 'lab', 'pal', 'verse'];
+  return root.charAt(0).toUpperCase() + root.slice(1) + SUF[seed % SUF.length];
+}
+
+/** Colours/fonts from the request's own words (dark, pastel, luxury, "blue"…); otherwise varied by request. */
+export function themeFor(req: string, category: Category, style: string | undefined, seed: number): ThemeSpec {
+  const text = `${req} ${style ?? ''}`.toLowerCase();
+  const wantsDark = /\b(dark|night|neon|black theme|amoled)\b/.test(text);
+  const wantsLight = /\b(light|white|bright|pastel|minimal|clean)\b/.test(text);
+  const words = new Set(text.match(/[a-z]+/g) ?? []);
+  let pool = PALETTES.filter((p) => (wantsDark ? p.dark : wantsLight ? !p.dark : true));
+  // The user's own words win; the category's mood is only a tie-breaker.
+  const tagsOf = (p: { tags: string }) => p.tags.split(' ').filter((t) => t !== 'dark' && t !== 'light');
+  const score = (p: { tags: string }) => tagsOf(p).filter((t) => words.has(t)).length;
+  const best = Math.max(0, ...pool.map(score));
+  const byMood = pool.filter((p) => tagsOf(p).some((t) => category.mood.includes(t)));
+  if (best > 0) pool = pool.filter((p) => score(p) === best); else if (byMood.length) pool = byMood;
+  const { tags: _t, ...pick } = pool[seed % pool.length];
+  const color = Object.keys(COLOR_WORDS).find((c) => words.has(c));
+  return {
+    ...pick,
+    primary: color ? COLOR_WORDS[color] : pick.primary,
+    mood: [style, `${pick.mood}; ${category.mood}`].filter(Boolean).join('; '),
+  };
+}
+
+/** Screens the user named themselves: "with login, wallet and settings screens", "pages: Home, Menu, Contact". */
+export function listedScreens(req: string): string[] {
+  const m = /(?:screens?|pages?|sections?)\s*(?::|like|such as|including|for)\s*([^.\n]+)/i.exec(req)
+    ?? /(?:with|including|has|having|containing)\s+([^.\n]+?)\s+(?:screens?|pages?|sections?)\b/i.exec(req);
+  if (!m) return [];
+  const seen = new Set<string>();
+  return m[1].split(/,|\band\b|&|\/|\+/i).map((x) => x.trim().replace(/^(a|an|the)\s+/i, '').replace(/\s+(screen|page|section)s?$/i, ''))
+    .filter((x) => x && x.split(/\s+/).length <= 4 && /[a-z]/i.test(x))
+    .map((x) => titleCase(x.toLowerCase()).slice(0, 40))
+    .filter((x) => { const k = x.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+/** A short name for a single requested screen ("a login screen for…" → "Login"). */
+function singleName(req: string): string | undefined {
+  const m = /\b(?:an?|the|my)?\s*([a-z][a-z-]*(?:\s[a-z][a-z-]*)?)\s+(?:screen|page)\b/i.exec(req);
+  const n = m?.[1]?.replace(/^(a|an|the|my)\s+/i, '').trim();
+  return n && !/^(new|main|one|this|first|single|app|mobile|web|home ?page)$/i.test(n) ? titleCase(n.toLowerCase()).slice(0, 40) : undefined;
+}
 
 /** Broad "make me an X app/website" request → full app. A specific screen/page stays single. */
 export function looksLikeFullAppRequest(prompt: string) {
@@ -240,28 +274,37 @@ export function looksLikeFullAppRequest(prompt: string) {
 function titleCase(s: string) { return s.replace(/\b\w/g, (m) => m.toUpperCase()); }
 
 export function planBuiltIn(i: EnhanceInput): DesignPlan {
-  const tpl = TEMPLATES.find((t) => t.keys.test(`${i.prompt} ${i.category ?? ''}`)) ?? GENERIC;
-  const full = i.mode === 'app' || (i.mode === 'auto' && looksLikeFullAppRequest(i.prompt));
-  const named = /(?:called|named)\s+["“]?([A-Z][\w\s&-]{1,30})/i.exec(i.prompt)?.[1]?.trim();
-  const appName = named ? titleCase(named) : tpl.name;
-  const pool = i.kind === 'website' ? WEB_PAGES : tpl.screens;
+  const req = i.prompt.trim();
+  const seed = hash(`${req.toLowerCase()}|${i.variation ?? ''}`);
+  const cat = CATEGORIES.find((t) => t.keys.test(`${req} ${i.category ?? ''}`)) ?? GENERIC;
+  const listed = listedScreens(req);
+  const full = i.mode === 'app' || (i.mode === 'auto' && (looksLikeFullAppRequest(req) || listed.length >= 2));
+  const named = /(?:called|named)\s+["“]?([A-Z][\w&-]*(?:\s+[A-Z][\w&-]*){0,3})/.exec(req)?.[1]?.trim();
+  const appName = named ? titleCase(named) : brandName(req, seed);
+  const unit = i.kind === 'website' ? 'page' : 'screen';
+  const pool = i.kind === 'website' ? WEB_PAGES : cat.screens;
+  const hintFor = (n: string) => (pool.find((s) => s.name.toLowerCase() === n.toLowerCase()) ?? WEB_PAGES.find((s) => s.name.toLowerCase() === n.toLowerCase()))?.prompt;
+  const screenPrompt = (n: string) => {
+    const hint = hintFor(n);
+    return `The ${n} ${unit} of ${appName}. It must serve exactly what the user asked for: "${req.slice(0, 600)}". ${hint ? `Typical structure (adapt it to the request): ${hint}.` : `Include the content, components and actions this ${unit} needs for that request.`} Invent original, specific content for THIS product (names, numbers, images, copy) — never generic placeholders or the same sample data as other apps.`;
+  };
   let screens: ScreenSpec[];
-  if (full && i.pageNames?.length) {
-    screens = i.pageNames.slice(0, Math.max(1, i.maxScreens)).map((n) => {
-      const known = pool.find((s) => s.name.toLowerCase() === n.toLowerCase()) ?? WEB_PAGES.find((s) => s.name.toLowerCase() === n.toLowerCase());
-      return { name: n, prompt: known?.prompt ?? `${n} ${i.kind === 'website' ? 'page' : 'screen'} with the shared navigation, a clear heading, the content and components this ${i.kind === 'website' ? 'page' : 'screen'} needs with realistic sample data, and an obvious primary action.` };
-    });
-  } else if (full) screens = pool.slice(0, Math.max(1, i.maxScreens));
-  else {
-    // Single screen: the user's own prompt is the screen; template details only add direction.
-    const match = i.pageName ? pool.find((s) => s.name.toLowerCase() === i.pageName!.toLowerCase()) : undefined;
-    screens = [{ name: i.pageName || (looksLikeFullAppRequest(i.prompt) ? pool[0].name : 'Screen 1'), prompt: `${i.prompt.trim()}${match ? `\n\nSuggested structure: ${match.prompt}` : ''}` }];
+  if (full) {
+    // Every screen the user named; otherwise the screens this kind of product needs (credits are the only limit).
+    const names = i.pageNames?.length ? i.pageNames : listed.length >= 2 ? listed : pool.map((s) => s.name).slice(0, Math.max(1, i.maxScreens));
+    screens = names.map((n) => ({ name: n, prompt: screenPrompt(n) }));
+  } else {
+    const name = i.pageName || singleName(req) || (looksLikeFullAppRequest(req) ? pool[0].name : 'Screen 1');
+    const hint = hintFor(name);
+    screens = [{ name, prompt: `${req}${hint ? `\n\nTypical structure (adapt it to the request): ${hint}.` : ''}\n\nUse original, specific content for this product — no generic placeholders.` }];
   }
-  const theme = i.style ? { ...tpl.theme, mood: `${i.style}; ${tpl.theme.mood}` } : tpl.theme;
+  const theme = themeFor(req, cat, i.style, seed);
+  const kw = keywords(req).slice(0, 6).join(', ');
   return {
-    enhancer: 'built-in', appName, category: i.category || tpl.category, isFullApp: full && screens.length > 1, theme,
-    designBrief: `${tpl.brief.replace(tpl.name, appName)} User request: "${i.prompt.trim().slice(0, 400)}".`,
-    navigation: i.pageNames?.length && full ? i.pageNames.slice(0, 6) : i.kind === 'website' ? WEB_PAGES.slice(0, Math.max(4, Math.min(i.maxScreens, 6))).map((s) => s.name) : tpl.nav,
+    enhancer: 'built-in', appName, category: i.category || cat.category, isFullApp: full && screens.length > 1, theme,
+    designBrief: `${appName} is a ${i.kind === 'website' ? 'website' : `${i.device.toLowerCase()} app`} built for this request: "${req.slice(0, 500)}". ${kw ? `Its subject: ${kw}. ` : ''}The visual language is ${theme.mood}. Every element, label and piece of content must be specific to this request.`,
+    // Sign-in / onboarding / checkout style screens are steps, not tabs.
+    navigation: screens.length > 1 ? screens.map((s) => s.name).filter((n) => !NOT_A_TAB.test(n)).slice(0, i.kind === 'website' ? 6 : 5) : [],
     screens,
   };
 }
@@ -269,7 +312,8 @@ export function planBuiltIn(i: EnhanceInput): DesignPlan {
 // ───────────────────────── Public API ─────────────────────────
 
 export async function enhance(uid: string, i: EnhanceInput): Promise<DesignPlan> {
-  const maxScreens = Math.min(Math.max(i.maxScreens, 1), 6);
+  // No small cap: the number of screens is what the request needs; credits are the limit (checked by the job).
+  const maxScreens = Math.min(Math.max(i.maxScreens, 1), 30);
   const input = { ...i, maxScreens };
   const geminiOn = (await listConnectionStatus(uid).catch(() => [])).some((c) => c.provider === 'gemini' && c.connected);
   if (geminiOn) {

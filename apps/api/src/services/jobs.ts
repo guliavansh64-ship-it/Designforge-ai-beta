@@ -14,7 +14,7 @@ import { notify, track } from './notify.js';
 import { runLogoEdit, runLogoJob, type LogoEditInput, type LogoJobInput } from './logos.js';
 import { safeQuery } from '../lib/safeQuery.js';
 import { extractNavLabels, extractStyleHint, screenSummary } from './appShape.js';
-import { enhance, enhanceEditInstruction, stitchPromptFor, type DesignPlan, type OutputMode } from './promptEnhancer.js';
+import { NOT_A_TAB, enhance, enhanceEditInstruction, stitchPromptFor, type DesignPlan, type OutputMode } from './promptEnhancer.js';
 import { publicApiUrl } from '../config.js';
 
 /**
@@ -305,7 +305,7 @@ async function runGenerate(ctx: JobCtx) {
     if (navAll.length) {
       const missing = navAll.filter((n) => !have.has(lower(n)));
       if (!missing.length) throw Errors.validation(`Every tab (${navAll.join(', ')}) already has a screen. Use "Add page" to add more screens.`);
-      pageNames = missing.slice(0, budget);
+      pageNames = missing; // every missing tab; credits are checked all-or-nothing below
       wantScreens = pageNames.length;
     } else wantScreens = Math.min(budget, 4);
   }
@@ -317,14 +317,14 @@ async function runGenerate(ctx: JobCtx) {
     prompt: complete ? `${origPrompt || p.prompt} (app name: ${project.name}).\n\nThe app already has a "${homeName}" screen showing: ${summary}\n\nDesign the OTHER screens of the same app, with matching content.` : p.prompt,
     kind: project.kind, device: p.deviceType,
     style: p.style,
-    category: p.category, mode, maxScreens: complete && !navAll.length ? wantScreens + 1 : wantScreens, pageName: existingName, pageNames,
+    category: p.category, mode, maxScreens: complete && !navAll.length ? wantScreens + 1 : wantScreens, pageName: existingName, pageNames, variation: ctx.job.id,
   }), 'Prompt enhancement');
   if (complete) {
     const have = new Set(project.pages.filter((x) => x.currentVersionId).map((x) => lower(x.name)).concat(lower(homeName)));
     let rest = plan.screens.filter((x) => !have.has(lower(x.name)));
     // No tab bar found and nothing matched by name: the planner's first screen is its own "home"; skip it.
     if (!navAll.length && rest.length === plan.screens.length && rest.length > 1) rest = rest.slice(1);
-    plan.screens = rest.slice(0, budget);
+    plan.screens = navAll.length ? rest : rest.slice(0, budget);
     if (!plan.screens.length) throw Errors.validation('This app already has all its main screens. Use "Add page" to add more.');
     plan.isFullApp = true;
     plan.appName = project.name;
@@ -335,7 +335,7 @@ async function runGenerate(ctx: JobCtx) {
     // Tabs must use the screens' own names, so every tab opens a real screen in Play mode.
     const names = plan.screens.map((x) => x.name);
     const navOk = plan.navigation.length >= 2 && plan.navigation.every((n) => names.some((m) => lower(m) === lower(n)));
-    if (!navOk) plan.navigation = names.slice(0, 5);
+    if (!navOk) plan.navigation = names.filter((n) => !NOT_A_TAB.test(n)).slice(0, 5);
   }
   const total = plan.screens.length;
   await jobRef(ctx.job.id).update({ plan, screensTotal: total, screensDone: 0, updatedAt: Date.now() });

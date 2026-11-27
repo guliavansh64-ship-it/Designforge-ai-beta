@@ -62,13 +62,13 @@ describe('full-app generation job', () => {
     const done = await waitDone(job.id);
     expect(done.status).toBe('succeeded');
     expect(done.resultVersionIds).toHaveLength(4);
-    expect(done.plan.appName).toBe('PulseFit');
+    expect(done.plan.appName).not.toBe('PulseFit');
     expect(done.screensDone).toBe(4);
     expect(prompts).toHaveLength(4);
-    expect(prompts.every((p) => p.includes('#A3E635'))).toBe(true); // shared theme in every prompt
+    expect(prompts.every((p) => p.includes(done.plan.theme.primary))).toBe(true); // shared theme in every prompt
     const project = (await fake.db.collection('projects').doc('p1').get()).data()!;
-    expect(project.name).toBe('PulseFit');
-    expect(project.pages.map((p: any) => p.name)).toEqual(['Home', 'Workouts', 'Active workout', 'Progress']);
+    expect(project.name).toBe(done.plan.appName);
+    expect(project.pages.map((p: any) => p.name)).toEqual(['Home', 'Workouts', 'Activity', 'Progress']);
     expect(project.pages.every((p: any) => p.currentVersionId)).toBe(true);
     expect(await credits.getBalance('u1')).toBe(40 - 4 * CREDIT_COSTS.generate_flash);
   });

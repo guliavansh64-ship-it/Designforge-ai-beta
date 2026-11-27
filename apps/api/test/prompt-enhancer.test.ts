@@ -4,7 +4,7 @@ const status = vi.fn();
 const generateJson = vi.fn();
 vi.mock('../src/services/connections.js', () => ({ listConnectionStatus: (...a: unknown[]) => status(...a), getCredential: vi.fn(), markConnection: vi.fn() }));
 vi.mock('../src/services/gemini.js', () => ({ gemini: { generateJson: (...a: unknown[]) => generateJson(...a) } }));
-const { enhance, planBuiltIn, stitchPromptFor, looksLikeFullAppRequest } = await import('../src/services/promptEnhancer.js');
+const { enhance, planBuiltIn, stitchPromptFor, looksLikeFullAppRequest, listedScreens } = await import('../src/services/promptEnhancer.js');
 
 const base = { kind: 'ui' as const, device: 'MOBILE' as const, maxScreens: 5 };
 
@@ -37,10 +37,11 @@ describe('Stitch prompt for each screen', () => {
   it('carries the shared theme, navigation and no-questions instruction', () => {
     const plan = planBuiltIn({ ...base, prompt: 'create a fitness app', mode: 'app' });
     const p = stitchPromptFor(plan, 1, 'ui');
-    expect(p).toContain('PulseFit: Workouts screen');
+    expect(p).toContain(`${plan.appName}: Workouts screen`);
     expect(p).toContain(plan.theme.primary);
     expect(p).toContain('screen 2 of 5');
-    expect(p).toContain('bottom tab bar with EXACTLY these labels, in this order: Home, Workouts, Progress, Profile');
+    expect(p).toContain(`bottom tab bar with EXACTLY these labels, in this order: ${plan.screens.map((s) => s.name).join(', ')}`);
+    expect(p).toContain('create a fitness app');
     expect(p).toMatch(/Do not ask clarifying questions/);
   });
 });
@@ -78,4 +79,30 @@ describe('enhance()', () => {
     expect(generateJson).not.toHaveBeenCalled();
     expect(plan.screens).toHaveLength(1);
   });
+});
+
+describe('built-in planner is driven by the request (no demo content)', () => {
+  const mk = (prompt: string, variation?: string) => planBuiltIn({ ...base, maxScreens: 80, prompt, mode: 'app', variation });
+  it('never uses the old demo names or sample people', () => {
+    for (const p of ['create a fitness app', 'A food delivery app', 'A creative earning app', 'a travel app']) {
+      const plan = mk(p);
+      const all = JSON.stringify(plan);
+      expect(all).not.toMatch(/PulseFit|Savora|Nova\b|Vaultly|Wandr|Learnly|Lumen Store|Alex|Bella Napoli|8,432/);
+      expect(plan.screens.every((s) => s.prompt.includes(p))).toBe(true);
+    }
+  });
+  it('different requests give different names/themes; the same prompt varies between runs', () => {
+    const a = mk('A creative fitness app'), b = mk('A yoga app for seniors with a calm pastel look'), c = mk('Dark neon crypto wallet app');
+    expect(new Set([a.appName, b.appName, c.appName]).size).toBe(3);
+    expect(c.theme.dark).toBe(true); expect(b.theme.dark).toBe(false);
+    const runs = new Set(['j1', 'j2', 'j3', 'j4', 'j5'].map((v) => `${mk('A creative fitness app', v).appName}|${mk('A creative fitness app', v).theme.primary}`));
+    expect(runs.size).toBeGreaterThan(1);
+  });
+  it('uses every screen the user lists (no 5-screen cap) and keeps login out of the tab bar', () => {
+    const plan = mk('Create a complete app for a dog walking service with login, dashboard, booking, chat, payments, reviews and settings screens');
+    expect(plan.screens.map((s) => s.name)).toEqual(['Login', 'Dashboard', 'Booking', 'Chat', 'Payments', 'Reviews', 'Settings']);
+    expect(plan.navigation).not.toContain('Login');
+    expect(listedScreens('pages: Home, Menu, Contact')).toEqual(['Home', 'Menu', 'Contact']);
+  });
+  it('honours colour words', () => { expect(mk('a blue banking app').theme.primary).toBe('#2563EB'); });
 });

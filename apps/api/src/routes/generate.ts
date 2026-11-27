@@ -56,8 +56,8 @@ generateRouter.post('/projects/:id/generate', generationLimiter, validate(z.obje
   category: z.string().max(40).optional(), style: z.string().max(200).optional(), idempotencyKey: idem,
   // Prompt enhancement + full-app generation. Absent → legacy single-screen behaviour (older app builds).
   enhance: z.boolean().optional(), mode: z.enum(['auto', 'single', 'app']).optional(),
-  maxScreens: z.number().int().min(2).max(6).optional(), plan: planSchema.optional(), auto: z.boolean().optional(),
-  pageNames: z.array(z.string().trim().min(1).max(40)).max(6).optional(),
+  maxScreens: z.number().int().min(2).max(30).optional(), plan: planSchema.optional(), auto: z.boolean().optional(),
+  pageNames: z.array(z.string().trim().min(1).max(40)).max(30).optional(),
   // Existing project: design the app's remaining screens (one per tab in its navigation).
   completeApp: z.boolean().optional(),
 })), ah(async (req, res) => {
@@ -87,7 +87,8 @@ generateRouter.post('/projects/:id/generate', generationLimiter, validate(z.obje
   });
   if (error === 'needs_design') throw Errors.validation('Design the first screen before completing the app.');
   if (error === 'needs_two') throw new AppError(402, ERROR_CODES.INSUFFICIENT_CREDITS, `A complete app needs at least 2 screens (${2 * per} credits, ${per} per screen). You have ${bal} credits, enough for ${affordable} screen. Nothing was generated.`, 'open_billing');
-  const maxScreens = Math.max(1, Math.min(5, affordable));
+  // No fixed screen cap: the request decides how many screens; the balance is the only limit.
+  const maxScreens = Math.max(1, Math.min(30, affordable));
   const job = await enqueue({
     ownerId: uid, projectId: project.id, type: 'generate', prompt: req.body.prompt,
     payload: { prompt: req.body.prompt, pageId: req.body.completeApp ? undefined : req.body.pageId, newPageName: req.body.newPageName, deviceType, enhance: true, mode, maxScreens, completeApp: !!req.body.completeApp, pageNames: req.body.pageNames, model: 'GEMINI_3_8_FLASH' },
@@ -103,8 +104,8 @@ generateRouter.post('/projects/:id/generate', generationLimiter, validate(z.obje
 generateRouter.post('/prompt/enhance', generationLimiter, validate(z.object({
   prompt: z.string().trim().min(3).max(4000), kind: z.enum(['ui', 'website']).default('ui'), deviceType: device.default('MOBILE'),
   style: z.string().max(200).optional(), category: z.string().max(40).optional(),
-  mode: z.enum(['auto', 'single', 'app']).default('auto'), maxScreens: z.number().int().min(2).max(6).default(5),
-  pageNames: z.array(z.string().trim().min(1).max(40)).max(6).optional(),
+  mode: z.enum(['auto', 'single', 'app']).default('auto'), maxScreens: z.number().int().min(2).max(30).default(5),
+  pageNames: z.array(z.string().trim().min(1).max(40)).max(30).optional(),
 })), ah(async (req, res) => {
   const b = req.body;
   const plan = await enhance(req.user!.uid, { prompt: b.prompt, kind: b.kind, device: b.deviceType, style: b.style, category: b.category, mode: b.mode, maxScreens: b.maxScreens, pageNames: b.pageNames });

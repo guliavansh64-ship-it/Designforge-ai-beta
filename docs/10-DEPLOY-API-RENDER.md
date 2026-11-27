@@ -299,3 +299,18 @@ Redeploy the API, then check that `GET /health` shows `"build":"2026-12-07"`. In
   - Designs one new screen per missing tab in the same look; the generic "Screen 1" is renamed to the first tab's name.
   - `POST /projects/:id/generate {completeApp:true}`, 5 cr per screen, all or nothing.
 - **Play** always starts from the first (home) screen. When a multi-screen generation finishes, the app opens Play automatically.
+
+## Build 2026-12-08: designs follow each prompt, no screen cap, Export tab removed
+
+Redeploy the API, then check that `GET /health` shows `"build":"2026-12-08"`. Install the new APK.
+
+- **No more identical designs.** Without a Gemini key, the built-in planner used fixed demo templates ("PulseFit", "Good morning, Alex", "Savora", "Nova"…). It is now prompt-driven:
+  - an original app name from the request ("called X" is honoured);
+  - colours and fonts from the request's own words (dark, neon, pastel, luxury, "blue"…), otherwise varied for each run;
+  - screens the user lists are all used;
+  - every screen prompt quotes the request and asks for original, specific content.
+  - No demo names, people or numbers remain.
+- **No fixed limit:** a complete app gets every screen the request needs. The only limit is credits (5 cr per screen, all reserved up front: if they can't all be covered, nothing is made and the error says how many screens the balance covers).
+- **Tab bar:** labels are the screens' own names. Login, sign-up, onboarding, checkout and payment screens are steps, not tabs. In Play, their main button ("Log in", "Continue"…) goes into the app.
+- **Export tab removed:** all downloads are in the top-right Download button.
+- **Broken images in generated screens:** dead logo images are hidden; other dead images become a neutral block (no broken-image icon or alt text).
