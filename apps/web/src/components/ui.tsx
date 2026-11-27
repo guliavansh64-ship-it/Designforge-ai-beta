@@ -153,7 +153,7 @@ export function Logo({ compact }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
       <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="dfg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#7c5cff" /><stop offset=".55" stopColor="#b06cff" /><stop offset="1" stopColor="#ff7a45" /></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#dfg)" /><path d="M9 23V9h10l-2.2 4.2H13.6v2.2h4.4l-2.2 4.2h-2.2V23z" fill="#fff" /></svg>
-      {!compact && <span className="font-display text-[15px] font-semibold tracking-tight">DesignForge<span className="gradient-text"> AI</span></span>}
+      {!compact && <span className="font-display text-[15px] font-semibold tracking-tight">Designo<span className="gradient-text"> AI</span></span>}
     </div>
   );
 }

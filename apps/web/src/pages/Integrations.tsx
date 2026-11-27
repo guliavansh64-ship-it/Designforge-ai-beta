@@ -10,16 +10,16 @@ import { Badge, Button, Card, ErrorBox, Modal, PageHeader } from '../components/
 
 const PROVIDERS = {
   stitch: {
-    name: 'Google Stitch', icon: Sparkles, role: 'Generates UI screens and websites in your own Stitch account.',
+    name: 'Google Stitch', icon: Sparkles, role: 'Generates UI screens, websites, and Logo & Brand Studio concepts directly in your Stitch account.',
     keyUrl: 'https://stitch.withgoogle.com/settings', keyLabel: 'Stitch API key',
     steps: ['Open stitch.withgoogle.com and sign in with your Google account', 'Open Settings (profile menu) → API keys', 'Create a key and copy it', 'Paste it below — we verify it with a read-only call'],
     note: 'Generations count against your own Stitch quota (Google currently offers a free monthly allowance; limits are set by Google and may change).',
   },
   gemini: {
-    name: 'Gemini (image generation)', icon: ImageIcon, role: 'Used only by Logo Studio to create logo images. Stitch does not generate standalone images.',
+    name: 'Gemini', icon: ImageIcon, role: 'Powers prompt enhancement and AI assistant chat.',
     keyUrl: 'https://aistudio.google.com/app/apikey', keyLabel: 'Gemini API key',
     steps: ['Open Google AI Studio and sign in', 'Click "Create API key" (choose or create a Google Cloud project)', 'Copy the key', 'Paste it below — we verify it with a read-only call'],
-    note: 'Usage is billed/limited by Google on your own account. Image models may require billing to be enabled on your Google Cloud project.',
+    note: 'Usage is billed/limited by Google on your own account.',
   },
 } as const;
 type P = keyof typeof PROVIDERS;

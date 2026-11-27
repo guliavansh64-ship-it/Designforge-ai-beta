@@ -30,7 +30,7 @@ export default function Settings() {
     if (v) registerForPush({ prompt: true }).catch(() => undefined); else unregisterPush();
   };
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 110 }}>
       <Card index={0}><Row>
         <Animated.View entering={popIn.delay(100)}>{me?.user.photoURL ? <Image source={{ uri: me.user.photoURL }} style={{ width: 52, height: 52, borderRadius: 26 }} /> : <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: c.primary }} />}</Animated.View>
         <View style={{ flex: 1 }}><T weight="600">{me?.user.displayName}</T><T muted size={13}>{me?.user.email}</T><Row gap={4}><T muted size={12}>{me?.plan.name} plan ·</T><CountUp value={me?.credits ?? 0} style={{ color: c.muted, fontSize: 12 }} /><T muted size={12}>credits</T></Row></View>
@@ -56,7 +56,7 @@ export default function Settings() {
         <Item icon={LogOut} label="Sign out" danger onPress={logout} />
         <Item icon={Trash2} label="Delete account" danger onPress={() => showAlert('Delete account?', 'Permanently deletes your projects, versions, connections and credits. Payment records are retained as required by law.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete forever', style: 'destructive', onPress: async () => { try { await api.del('/me', { confirm: 'DELETE' }); logout(); } catch (e) { showAlert('Error', (e as Error).message); } } }])} />
       </Card>
-      <T muted size={11} style={{ textAlign: 'center' }}>DesignForge AI · Google Stitch is a Google product; we connect with your authorization.</T>
+      <T muted size={11} style={{ textAlign: 'center' }}>Designo · Google Stitch is a Google product; we connect with your authorization.</T>
     </ScrollView>
   );
 }

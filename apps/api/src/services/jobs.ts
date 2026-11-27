@@ -217,7 +217,7 @@ export function startStaleJobSweeper() {
 async function ensureStitchProject(project: Project, uid: string, ctx: JobCtx) {
   if (project.stitchProjectId) return project.stitchProjectId;
   await ctx.stage('Creating Stitch project in your account', 8);
-  const id = await ctx.timed(stitchEngine.ensureProject(uid, `DesignForge · ${project.name}`), 'Create project');
+  const id = await ctx.timed(stitchEngine.ensureProject(uid, `Designo · ${project.name}`), 'Create project');
   await db().collection(C.projects).doc(project.id).update({ stitchProjectId: id });
   project.stitchProjectId = id;
   return id;

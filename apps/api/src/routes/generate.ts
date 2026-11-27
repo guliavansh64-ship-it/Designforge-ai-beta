@@ -150,7 +150,7 @@ generateRouter.post('/projects/:id/logos', generationLimiter, validate(z.object(
   const uid = req.user!.uid;
   const project = await loadProject(req.params.id, uid, 'owner');
   if (project.kind !== 'logo') throw Errors.validation('Logo generation runs inside a Logo project');
-  const pf = await preflight(uid, 'gemini');
+  const pf = await preflight(uid, 'stitch');
   if (!pf.plan.features.includes('logo_studio')) throw Errors.feature('logo studio');
   const job = await enqueue({ ownerId: uid, projectId: project.id, type: 'logo', prompt: `${req.body.brandName} — ${req.body.styles.join(', ')}`, payload: req.body, op: 'logo_batch', multiplier: Math.ceil(req.body.count / 2), idempotencyKey: req.body.idempotencyKey, priority: pf.priority });
   res.status(202).json({ job });

@@ -76,7 +76,7 @@ export default function Studio() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 18, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 18, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
         {/* Hero */}
         <Animated.View entering={FadeInDown.springify().damping(16)}>
           <LinearGradient colors={[c.primary + '40', c.ember + '26', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 24, padding: 20, gap: 8, borderWidth: 1, borderColor: c.primary + '33' }}>
@@ -103,7 +103,7 @@ export default function Studio() {
               style={{ minHeight: 130, color: c.text, fontSize: 17, padding: 14, lineHeight: 24 }} accessibilityLabel="Describe what you want to build" />
             <Row style={{ justifyContent: 'space-between', paddingHorizontal: 12, paddingBottom: 8 }}>
               <T muted size={11}>{prompt.length ? `${prompt.length}/4000` : 'Short is fine'}</T>
-              <Row gap={4}><Coins size={12} color={c.amber} /><T muted size={11}>2 credits / screen</T></Row>
+              <Row gap={4}><Coins size={12} color={c.amber} /><T muted size={11}>5 credits / screen</T></Row>
             </Row>
           </GlowBox>
         </Animated.View>

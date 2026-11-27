@@ -159,9 +159,9 @@ export async function buildHtmlExport(projectName: string, pages: ExportPage[]):
     if (root.querySelector('script[src*="cdn.tailwindcss.com"]')) report.warnings.push(`${page.name}: uses the Tailwind Play CDN runtime. For production, compile Tailwind (see README).`);
     files[nav[i].file] = '<!doctype html>\n' + root.toString().replace(/^<!doctype html>/i, '').trim();
   }
-  files['css/styles.css'] = allCss.join('\n\n') || '/* DesignForge: no custom CSS */\n';
-  files['js/main.js'] = allJs.join('\n\n') || '// DesignForge: no custom scripts\n';
-  files['README.md'] = `# ${projectName}\n\nExported from DesignForge AI.\n\n## Pages\n${nav.map((n) => `- [${n.name}](${n.file})`).join('\n')}\n\n## Run\nOpen \`index.html\` in a browser, or serve the folder:\n\n\`\`\`bash\nnpx serve .\n\`\`\`\n\n## Notes\n${report.warnings.map((w) => `- ${w}`).join('\n') || '- No warnings.'}\n${report.assetsFailed.length ? `\n### Assets kept as remote URLs\n${report.assetsFailed.map((a) => `- ${a}`).join('\n')}\n` : ''}`;
+  files['css/styles.css'] = allCss.join('\n\n') || '/* Designo: no custom CSS */\n';
+  files['js/main.js'] = allJs.join('\n\n') || '// Designo: no custom scripts\n';
+  files['README.md'] = `# ${projectName}\n\nExported from Designo.\n\n## Pages\n${nav.map((n) => `- [${n.name}](${n.file})`).join('\n')}\n\n## Run\nOpen \`index.html\` in a browser, or serve the folder:\n\n\`\`\`bash\nnpx serve .\n\`\`\`\n\n## Notes\n${report.warnings.map((w) => `- ${w}`).join('\n') || '- No warnings.'}\n${report.assetsFailed.length ? `\n### Assets kept as remote URLs\n${report.assetsFailed.map((a) => `- ${a}`).join('\n')}\n` : ''}`;
   report.files = Object.keys(files).length;
   return { files, report };
 }
@@ -227,7 +227,7 @@ export async function buildReactExport(projectName: string, pages: ExportPage[])
   files['src/App.tsx'] = `import { Routes, Route } from 'react-router-dom';\n${routes.map((r) => `import ${r.comp} from './pages/${r.comp}';`).join('\n')}\n\nexport default function App() {\n  return (\n    <Routes>\n${routes.map((r) => `      <Route path="${r.path}" element={<${r.comp} />} />`).join('\n')}\n    </Routes>\n  );\n}\n`;
   files['.gitignore'] = 'node_modules\ndist\n.env\n';
   files['.github/workflows/build.yml'] = `name: build\non: [push, pull_request]\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with: { node-version: 20 }\n      - run: npm install\n      - run: npm run build\n`;
-  files['README.md'] = `# ${projectName}\n\nReact + TypeScript + Tailwind project exported from DesignForge AI.\n\n## Setup\n\`\`\`bash\nnpm install\nnpm run dev      # http://localhost:5173\nnpm run build    # production build in dist/\n\`\`\`\n\n## Structure\n- \`src/pages/*\` — one component per designed page (routes: ${routes.map((r) => `\`${r.path}\``).join(', ')})\n- \`src/components/<Page>/*\` — one component per top-level section\n- \`public/assets\` — downloaded images\n\nNo secrets or API keys are included.\n`;
+  files['README.md'] = `# ${projectName}\n\nReact + TypeScript + Tailwind project exported from Designo.\n\n## Setup\n\`\`\`bash\nnpm install\nnpm run dev      # http://localhost:5173\nnpm run build    # production build in dist/\n\`\`\`\n\n## Structure\n- \`src/pages/*\` — one component per designed page (routes: ${routes.map((r) => `\`${r.path}\``).join(', ')})\n- \`src/components/<Page>/*\` — one component per top-level section\n- \`public/assets\` — downloaded images\n\nNo secrets or API keys are included.\n`;
 
   report.errors = validateTsx(files);
   report.files = Object.keys(files).length;

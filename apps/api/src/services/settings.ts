@@ -15,7 +15,7 @@ export interface SystemSettings {
 }
 
 export const DEFAULT_SETTINGS: SystemSettings = {
-  platformName: 'DesignForge AI',
+  platformName: 'Designo',
   primaryColor: '#7C5CFF',
   maintenanceMode: false,
   supportEmail: 'support@designforge.app',

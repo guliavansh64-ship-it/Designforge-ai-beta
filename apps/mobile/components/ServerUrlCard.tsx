@@ -78,7 +78,7 @@ export function ServerUrlCard({ index, onChanged, inline }: { index?: number; on
               <Button small title={dirty || status !== 'ok' ? 'Connect' : 'Re-check'} loading={status === 'checking'} disabled={!draft.trim()} onPress={save} style={{ flex: 1 }} />
               {!inline && <Button small variant="secondary" title="Cancel" onPress={() => { setEditing(false); setErr(null); setDraft(url); }} />}
             </Row>
-            {inline && <T muted size={11}>Paste the address of your DesignForge API (Render, a tunnel, or http://PC-IP:8080 on the same Wi-Fi).</T>}
+            {inline && <T muted size={11}>Paste the address of your Designo API (Render, a tunnel, or http://PC-IP:8080 on the same Wi-Fi).</T>}
           </View>
         ) : (
           <View style={{ gap: 8 }}>

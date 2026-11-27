@@ -25,7 +25,7 @@ export default function LogoStudio() {
   const { me, refresh } = useAuth();
   const nav = useNavigate();
   const toast = useToast();
-  const gemini = me?.connections.find((c) => c.provider === 'gemini');
+  const stitch = me?.connections.find((c) => c.provider === 'stitch');
   const allowed = me?.plan.features.includes('logo_studio');
   const list = useApi<{ projects: Project[] }>(projectId ? null : '/projects?kind=logo&limit=30');
 
@@ -82,24 +82,24 @@ export default function LogoStudio() {
 
   return (
     <div>
-      <PageHeader eyebrow="Images by your Gemini account" title="Logo & Brand Studio" subtitle="Generate logo concepts, get transparent and dark-background variants, a colour palette and typography pairing — then download a brand kit." />
+      <PageHeader eyebrow="Powered by Google Stitch" title="Logo & Brand Studio" subtitle="Generate logo concepts, get transparent and dark-background variants, a colour palette and typography pairing — then download a brand kit." />
 
       <Card className="mb-6 flex items-start gap-3 border-sky-500/20 bg-sky-500/5 p-4 text-sm">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-500" />
-        <p>Google Stitch generates <b>UI screens</b>, not standalone logo artwork. Logo Studio therefore uses a <b>separate image model</b> (Gemini image generation) through <b>your own Gemini API key</b>. AI logos are raster images; only Wordmark concepts also get a true vector SVG. Always check trademarks before using a logo commercially.</p>
+        <p>Logo & Brand Studio uses your connected <b>Google Stitch API</b> to design custom logo concepts, vector SVG marks, brand color palettes, and typography pairings.</p>
       </Card>
 
       {!allowed && <ErrorBox className="mb-6" error={Object.assign(new Error('Logo Studio is available on Pro, Premium and Lifetime plans.'), { action: 'upgrade_plan' }) as any} />}
-      {allowed && gemini && !gemini.connected && (
+      {allowed && stitch && !stitch.connected && (
         <Card className="mb-6 flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
-          <Plug className="h-5 w-5 text-ember-500" /><p className="flex-1 text-sm">Connect your Gemini API key (free tier available in Google AI Studio) to generate logos.</p>
-          <Button onClick={() => nav('/integrations')}>Connect Gemini</Button>
+          <Plug className="h-5 w-5 text-ember-500" /><p className="flex-1 text-sm">Connect your Google Stitch API key to generate logos.</p>
+          <Button onClick={() => nav('/integrations')}>Connect Stitch</Button>
         </Card>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <Card className="h-fit p-5">
-          <fieldset disabled={!allowed || !gemini?.connected || !!running} className="space-y-4 disabled:opacity-60">
+          <fieldset disabled={!allowed || !stitch?.connected || !!running} className="space-y-4 disabled:opacity-60">
             <div><label className="label" htmlFor="bn">Brand name</label><input id="bn" className="field" maxLength={40} value={brandName} onChange={(e) => setBrandName(e.target.value)} placeholder="e.g. Kora" /></div>
             <div><label className="label" htmlFor="ind">Industry / what you do</label><input id="ind" className="field" maxLength={60} value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="e.g. Organic skincare" /></div>
             <div><label className="label" htmlFor="tg">Tagline (optional)</label><input id="tg" className="field" maxLength={140} value={tagline} onChange={(e) => setTagline(e.target.value)} /></div>

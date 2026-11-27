@@ -68,7 +68,7 @@ describe('full-app generation job', () => {
     expect(project.name).toBe('PulseFit');
     expect(project.pages.map((p: any) => p.name)).toEqual(['Home', 'Workouts', 'Active workout', 'Progress']);
     expect(project.pages.every((p: any) => p.currentVersionId)).toBe(true);
-    expect(await credits.getBalance('u1')).toBe(40 - 4 * 2);
+    expect(await credits.getBalance('u1')).toBe(40 - 4 * 5);
   });
 
   it('a transient Stitch error is retried automatically on the fast model', async () => {
@@ -82,7 +82,7 @@ describe('full-app generation job', () => {
     expect(prompts).toHaveLength(5);
     expect(models[2]).toBe('GEMINI_3_8_FLASH');
     expect(models[3]).toBe('GEMINI_3_5_FLASH_LITE');
-    expect(await credits.getBalance('u1')).toBe(40 - 4 * 2);
+    expect(await credits.getBalance('u1')).toBe(40 - 4 * 5);
   });
 
   it('a failing later screen keeps finished screens and refunds only that screen', async () => {
@@ -94,7 +94,7 @@ describe('full-app generation job', () => {
     expect(done.status).toBe('succeeded');
     expect(done.resultVersionIds).toHaveLength(3);
     expect(done.warnings[0]).toMatch(/could not be generated/);
-    expect(await credits.getBalance('u1')).toBe(40 - 3 * 2);
+    expect(await credits.getBalance('u1')).toBe(40 - 3 * 5);
   });
 
   it('automatic mode: a specific screen request gets exactly one (enhanced) screen on the given page', async () => {

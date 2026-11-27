@@ -26,7 +26,7 @@ export function Logo({ size = 84, animated = true, ring = true }: { size?: numbe
   const pad = ring ? Math.round(size * 0.08) : 0;
   const outer = size + pad * 2;
   return (
-    <View style={{ width: outer, height: outer, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="DesignForge AI logo">
+    <View style={{ width: outer, height: outer, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Designo logo">
       <Animated.View style={[{ position: 'absolute', width: outer * 1.25, height: outer * 1.25, borderRadius: outer }, glowStyle]}>
         <LinearGradient colors={['#7c5cff55', '#ff7a4500']} start={{ x: 0.2, y: 0.2 }} end={{ x: 1, y: 1 }} style={{ flex: 1, borderRadius: outer }} />
       </Animated.View>

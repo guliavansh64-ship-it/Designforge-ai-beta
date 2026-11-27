@@ -72,7 +72,7 @@ const list = (a: string[]) => (a.length ? a.map((x) => `“${x}”`).join(', ') 
 export function builtInAnswer(q: string, p: ProjectFacts | null, a: AccountFacts): string {
   const m = q.toLowerCase();
   const has = (...w: string[]) => w.some((x) => m.includes(x));
-  if (has('credit', 'balance')) return `You have ${a.credits} credits on the ${a.plan} plan. Asking me questions is free. Generating costs 2 credits per screen, an edit 2 credits, HTML ZIP export 1, React export 2. PNG/HTML downloads are free.`;
+  if (has('credit', 'balance')) return `You have ${a.credits} credits on the ${a.plan} plan. Asking me questions is free. Generating costs 5 credits per screen, an edit 2 credits, HTML ZIP export 1, React export 2. PNG/HTML downloads are free.`;
   if (has('plan', 'subscription', 'renew', 'expire')) return `You are on the ${a.plan} plan${a.subscriptionStatus ? ` (status: ${a.subscriptionStatus})` : ''}.${a.renewsOrExpiresAt ? ` Your current period ends on ${new Date(a.renewsOrExpiresAt).toDateString()}.` : ''} Plans do not auto-renew — renew each month from Settings → Plans & credits.`;
   if (has('change', 'edit', 'modify', 'update', 'make it', 'redesign')) return 'I can only answer questions — I never change your project. To change a design, open the project, pick the page and use the “AI edit” tab, or create a new design in the Studio.';
   if (has('export', 'download', 'code', 'react', 'zip', 'html', 'figma')) return 'Open the project → a page → Download. PNG and HTML are free, HTML ZIP costs 1 credit and a runnable React project costs 2 credits.';
@@ -114,7 +114,7 @@ export async function answer(uid: string, question: string, projectId: string | 
   if (geminiOn) {
     try {
       const prompt = [
-        'You are the DesignForge AI assistant inside a mobile app that designs app UIs and websites with Google Stitch.',
+        'You are the Designo assistant inside a mobile app that designs app UIs and websites with Google Stitch.',
         'You are READ-ONLY: you answer questions only. You can NOT change, edit, generate or delete anything. If asked to change something, say you can only answer questions and tell them to open the project and use the "AI edit" tab, or the Studio.',
         'Answer using ONLY the facts below; if something is not in the facts, say you do not know. Be friendly, concise (max ~120 words), plain text, no markdown headings. Asking you is free.',
         `FACTS: ${factsForPrompt(p, a)}`,

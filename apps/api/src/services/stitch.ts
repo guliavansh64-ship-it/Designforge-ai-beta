@@ -58,7 +58,7 @@ export async function mapStitchError(uid: string | undefined, e: unknown): Promi
     case 'RATE_LIMITED':
       if (uid) await markConnection(uid, 'stitch', 'quota_exceeded', 'Stitch quota reached for this Google account.');
       return new AppError(429, ERROR_CODES.STITCH_RATE_LIMITED,
-        'Your Google Stitch quota or rate limit has been reached. This is a Google limit on your account, not a DesignForge credit limit.');
+        'Your Google Stitch quota or rate limit has been reached. This is a Google limit on your account, not a Designo credit limit.');
     case 'NOT_FOUND':
       return new AppError(404, ERROR_CODES.STITCH_ERROR, 'The linked Stitch project or screen no longer exists in your Stitch account.');
     case 'VALIDATION_ERROR':

@@ -34,13 +34,13 @@ export function Login() {
             ))}
           </div>
         </div>
-        <p className="text-xs text-ink-500">Google Stitch is a Google product. DesignForge AI is an independent tool that connects to it with your authorization.</p>
+        <p className="text-xs text-ink-500">Google Stitch is a Google product. Designo is an independent tool that connects to it with your authorization.</p>
       </section>
       <section className="relative flex items-center justify-center p-6">
         <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-sm">
           <div className="mb-8 lg:hidden"><Logo /></div>
           <h2 className="font-display text-3xl font-semibold tracking-tight">Welcome</h2>
-          <p className="mt-2 text-sm text-ink-400">Sign in to DesignForge AI. Connecting Google Stitch is a separate, optional step you control in Integrations.</p>
+          <p className="mt-2 text-sm text-ink-400">Sign in to Designo. Connecting Google Stitch is a separate, optional step you control in Integrations.</p>
           <Button size="lg" variant="secondary" className="mt-8 w-full !bg-white !text-ink-900 hover:!bg-ink-100" onClick={signIn} disabled={!firebaseConfigured} icon={<G />}>Continue with Google</Button>
           {!firebaseConfigured && <p className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">Firebase isn't configured for this build. Set the <code>VITE_FIREBASE_*</code> variables (see docs/03-ENVIRONMENT.md).</p>}
           {error && <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300" role="alert">{error}</p>}

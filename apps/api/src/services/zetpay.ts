@@ -77,7 +77,7 @@ export async function createZetpayOrder(uid: string, p: Purchase, opts: { coupon
     method: 'POST',
     body: JSON.stringify({
       amount: amountInr,
-      title: `DesignForge AI — ${priced.description}`.slice(0, 100),
+      title: `Designo — ${priced.description}`.slice(0, 100),
       ...(mobile ? { customer_mobile: mobile } : {}),
       redirect_url: `${publicApiUrl()}/api/billing/zetpay/return/${opts.client}`,
       useEmbedded: false,

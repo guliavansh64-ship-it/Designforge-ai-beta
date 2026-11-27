@@ -21,7 +21,7 @@ meRouter.get('/me', ah(async (req, res) => {
     const { track, notify } = await import('../services/notify.js');
     await track('registrations');
     // In-app welcome now; its push arrives once the device registers its token on first launch.
-    await notify(u.uid, 'welcome', 'Welcome to DesignForge AI 🎉', 'Connect Stitch in Integrations, then describe any app — e.g. "create a fitness app" — and we design every screen for you.').catch(() => undefined);
+    await notify(u.uid, 'welcome', 'Welcome to Designo 🎉', 'Connect Stitch in Integrations, then describe any app — e.g. "create a fitness app" — and we design every screen for you.').catch(() => undefined);
   } else {
     await ref.update({ lastSeenAt: Date.now(), email: u.email ?? snap.get('email') ?? null, photoURL: u.picture ?? snap.get('photoURL') ?? null });
   }

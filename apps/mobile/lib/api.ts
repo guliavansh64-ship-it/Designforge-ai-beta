@@ -44,9 +44,9 @@ export async function testApiUrl(raw: string): Promise<string> {
   try {
     const r = await fetch(`${base}/health`, { signal: ctrl.signal });
     const j = await r.json().catch(() => null);
-    if (!r.ok || !j?.ok) throw new Error(`Server answered ${r.status} but it is not a DesignForge API`);
+    if (!r.ok || !j?.ok) throw new Error(`Server answered ${r.status} but it is not a Designo API`);
   } catch (e) {
-    throw new Error((e as Error).name === 'AbortError' ? 'No answer within 60 s' : (e as Error).message.includes('DesignForge') ? (e as Error).message : `Could not reach ${base}/health`);
+    throw new Error((e as Error).name === 'AbortError' ? 'No answer within 60 s' : (e as Error).message.includes('Designo') || (e as Error).message.includes('DesignForge') ? (e as Error).message : `Could not reach ${base}/health`);
   } finally { clearTimeout(t); }
   return base;
 }

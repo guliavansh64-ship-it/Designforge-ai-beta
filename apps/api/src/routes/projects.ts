@@ -211,7 +211,7 @@ projectsRouter.post('/projects/:id/share', validate(z.object({ email: z.string()
   const { plan } = await getEntitlements(req.user!.uid);
   if (!plan.features.includes('project_sharing')) throw Errors.feature('project sharing');
   let target;
-  try { target = await auth().getUserByEmail(req.body.email); } catch { throw Errors.notFound('DesignForge user with that email'); }
+  try { target = await auth().getUserByEmail(req.body.email); } catch { throw Errors.notFound('Designo user with that email'); }
   if (target.uid === req.user!.uid) throw Errors.validation('You already own this project');
   const sharedWith = { ...(p.sharedWith ?? {}) };
   if (req.body.role === 'none') delete sharedWith[target.uid]; else sharedWith[target.uid] = req.body.role;

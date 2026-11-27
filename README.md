@@ -1,4 +1,4 @@
-# DesignForge AI
+# Designo
 
 An AI design platform for UI screens, websites and brand identities. Generation runs in **each user's own Google Stitch account** (logos use the user's own Gemini key). The platform has three clients and one backend:
 
@@ -45,10 +45,10 @@ npm run check     # typecheck API+web → 52 API tests → production builds →
 Infrastructure files: `firebase.json`, `firestore.rules` (deny-all client access), `firestore.indexes.json` (37 composite indexes derived from the API's queries), `render.yaml`, `apps/api/Dockerfile`, `apps/web/public/_headers`, `apps/web/functions/api/[[path]].ts` (Pages proxy).
 
 ## Honest limits (by design)
-- **No shared AI key.** Every user connects their own Stitch key (and a Gemini key for logos). Their quota is Google's, separate from DesignForge credits.
+- **No shared AI key.** Every user connects their own Stitch key (and a Gemini key for logos). Their quota is Google's, separate from Designo credits.
 - **Stitch generates UI, not images.** Logos use Gemini image models. AI logos are raster; wordmark concepts also get a real SVG.
 - **No Figma export.** There is no reliable public API for it, so the product doesn't claim one.
-- **Audit scores are DesignForge heuristics** (a transparent checklist), not objective quality ratings.
+- **Audit scores are Designo heuristics** (a transparent checklist), not objective quality ratings.
 - **Stitch connection uses API keys, not OAuth.** Stitch's OAuth path requires each user to have a Google Cloud project with IAM setup (see the feasibility report). API keys are the realistic per-user option today and are encrypted at rest.
 - **Free hosting sleeps.** See the deployment doc for what that means and when to upgrade.
 - **Play Store payments policy** for digital goods needs a business decision (07-DEPLOYMENT §4).

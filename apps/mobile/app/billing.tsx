@@ -68,7 +68,7 @@ export default function Billing() {
           <History size={16} color={c.primary} /><T size={13} weight="600" style={{ color: c.primary }}>History</T>
         </PressScale>
       ) }} />
-      <Card index={0}><Row><Coins color={c.amber} size={26} /><View style={{ flex: 1 }}><CountUp value={me?.credits ?? 0} style={{ color: c.text, fontSize: 26, fontWeight: '800' }} /><T muted size={12}>DesignForge credits · {me?.plan.name} plan</T></View></Row>
+      <Card index={0}><Row><Coins color={c.amber} size={26} /><View style={{ flex: 1 }}><CountUp value={me?.credits ?? 0} style={{ color: c.text, fontSize: 26, fontWeight: '800' }} /><T muted size={12}>Designo credits · {me?.plan.name} plan</T></View></Row>
         <T muted size={11} style={{ marginTop: 8 }}>Credits are separate from your Google Stitch/Gemini quota, which Google manages for your account.</T></Card>
       <ErrorBox error={err} />
       {!provider && plans.data && <T muted size={12}>Payments are temporarily unavailable. Please try again later.</T>}

@@ -96,7 +96,7 @@ export default function Dashboard() {
           </Card>
           <Card className="p-5">
             <h2 className="mb-3 font-display font-semibold">Connections</h2>
-            {[{ c: stitch, name: 'Google Stitch', role: 'UI & website generation' }, { c: gemini, name: 'Gemini (images)', role: 'Logo Studio' }].map(({ c, name, role }) => (
+            {[{ c: stitch, name: 'Google Stitch', role: 'UI, website & Logo Studio generation' }, { c: gemini, name: 'Gemini', role: 'Prompt enhancer & Assistant' }].map(({ c, name, role }) => (
               <div key={name} className="flex items-center gap-3 py-2">
                 {c?.connected ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : <AlertTriangle className="h-5 w-5 text-amber-500" />}
                 <div className="flex-1"><p className="text-sm font-medium">{name}</p><p className="muted text-xs">{c?.connected ? `Connected · key ${c.keyHint}` : role}</p></div>

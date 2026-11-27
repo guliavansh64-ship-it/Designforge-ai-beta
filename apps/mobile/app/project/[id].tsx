@@ -200,7 +200,7 @@ export default function ProjectScreen() {
         {tab === 'audit' && (<Swap id="audit">
           <Card style={{ gap: 8 }}>
             {version?.audit ? (<>
-              <Row><Animated.View entering={popIn}><CountUp value={version.audit.score} style={{ color: c.text, fontSize: 28, fontWeight: '800' }} /></Animated.View><View style={{ flex: 1 }}><T weight="600">DesignForge heuristic score</T><T muted size={12}>Share of automated checks passed — a checklist, not an objective rating.</T></View></Row>
+              <Row><Animated.View entering={popIn}><CountUp value={version.audit.score} style={{ color: c.text, fontSize: 28, fontWeight: '800' }} /></Animated.View><View style={{ flex: 1 }}><T weight="600">Designo heuristic score</T><T muted size={12}>Share of automated checks passed — a checklist, not an objective rating.</T></View></Row>
               {[...version.audit.checks].sort((a, b) => Number(a.passed) - Number(b.passed)).map((ck, i) => (
                 <Appear key={ck.id} index={i}><Row style={{ alignItems: 'flex-start' }}>{ck.passed ? <CheckCircle2 size={16} color={c.green} /> : <XCircle size={16} color={ck.severity === 'high' ? c.red : c.amber} />}<View style={{ flex: 1 }}><T size={13}>{ck.label}</T>{!ck.passed && <T muted size={12}>{ck.detail}</T>}</View></Row></Appear>
               ))}

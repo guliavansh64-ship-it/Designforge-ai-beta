@@ -77,7 +77,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     }
     const settings = await getSystemSettings();
     if (settings.maintenanceMode && !req.user.adminRole) {
-      throw new AppError(503, ERROR_CODES.MAINTENANCE, settings.maintenanceMessage || 'DesignForge is under maintenance.');
+      throw new AppError(503, ERROR_CODES.MAINTENANCE, settings.maintenanceMessage || 'Designo is under maintenance.');
     }
     next();
   } catch (e) {

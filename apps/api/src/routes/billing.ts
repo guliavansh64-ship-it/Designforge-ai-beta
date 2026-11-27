@@ -34,14 +34,14 @@ billingPublicRouter.get('/billing/zetpay/return/:client', ah(async (req, res) =>
     try { status = (await checkZetpayOrder(orderId)).status; } catch { status = 'unknown'; }
   }
   const qs = `zp_order=${encodeURIComponent(orderId)}&status=${encodeURIComponent(status)}`;
-  const target = req.params.client === 'web' ? `${env.PUBLIC_WEB_URL.replace(/\/$/, '')}/credits?${qs}` : `designforge://billing?${qs}`;
+  const target = req.params.client === 'web' ? `${env.PUBLIC_WEB_URL.replace(/\/$/, '')}/credits?${qs}` : `designo://billing?${qs}`;
   const ok = status === 'paid';
   res.set('Cache-Control', 'no-store');
-  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DesignForge AI</title>
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Designo</title>
 <meta http-equiv="refresh" content="1;url=${target.replace(/"/g, '&quot;')}"></head>
 <body style="font-family:system-ui;background:#0b0b12;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center">
 <div><div style="font-size:42px">${ok ? '✅' : status === 'failed' ? '❌' : '⏳'}</div><h2>${ok ? 'Payment successful' : status === 'failed' ? 'Payment failed' : 'Checking your payment…'}</h2>
-<p style="color:#aaa">Returning to DesignForge AI…</p><a style="color:#a78bfa" href="${target.replace(/"/g, '&quot;')}">Tap here if nothing happens</a></div>
+<p style="color:#aaa">Returning to Designo…</p><a style="color:#a78bfa" href="${target.replace(/"/g, '&quot;')}">Tap here if nothing happens</a></div>
 <script>setTimeout(function(){location.replace(${JSON.stringify(target)})},300)</script></body></html>`);
 }));
 
@@ -145,8 +145,8 @@ billingRouter.get('/billing/invoices/:id', ah(async (req, res) => {
   if (!d || d.ownerId !== req.user!.uid || d.status !== 'paid') throw Errors.notFound('Invoice');
   const esc = (x: unknown) => String(x ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]!);
   res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Invoice ${esc(d.invoiceNumber)}</title><style>body{font-family:system-ui;max-width:640px;margin:40px auto;color:#111}td{padding:6px 0}h1{font-size:22px}.r{text-align:right}</style></head><body>
-<h1>DesignForge AI — Invoice</h1><p>Invoice #: <b>${esc(d.invoiceNumber)}</b><br>Date: ${new Date(d.paidAt).toLocaleDateString('en-IN')}<br>Billed to: ${esc(req.user!.email)}</p>
+<h1>Designo — Invoice</h1><p>Invoice #: <b>${esc(d.invoiceNumber)}</b><br>Date: ${new Date(d.paidAt).toLocaleDateString('en-IN')}<br>Billed to: ${esc(req.user!.email)}</p>
 <table style="width:100%;border-top:1px solid #ddd"><tr><td>${esc(d.description)}</td><td class="r">₹${(d.amountPaise / 100).toFixed(2)}</td></tr>${d.coupon ? `<tr><td>Coupon ${esc(d.coupon)}</td><td class="r">−₹${((d.listAmountPaise - d.amountPaise) / 100).toFixed(2)}</td></tr>` : ''}
 <tr><td><b>Total paid</b></td><td class="r"><b>₹${(d.amountPaise / 100).toFixed(2)}</b></td></tr></table>
-<p style="color:#666;font-size:13px">Payment ID ${esc(d.paymentId)} via ${d.provider === 'zetpay' ? 'UPI (ZetPay)' : 'Razorpay'} (${esc(d.method)}). DesignForge plans grant platform features and credits only; Google Stitch/Gemini usage is governed by your own Google account limits.</p></body></html>`);
+<p style="color:#666;font-size:13px">Payment ID ${esc(d.paymentId)} via ${d.provider === 'zetpay' ? 'UPI (ZetPay)' : 'Razorpay'} (${esc(d.method)}). Designo plans grant platform features and credits only; Google Stitch/Gemini usage is governed by your own Google account limits.</p></body></html>`);
 }));

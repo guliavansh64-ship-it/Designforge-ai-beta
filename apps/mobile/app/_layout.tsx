@@ -56,7 +56,7 @@ function Gate() {
     return () => sub.remove();
   }, [router, loading, me]);
   if (loading) return (
-    <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Loading DesignForge">
+    <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Loading Designo">
       <Orbs />
       <Animated.View entering={popIn}><Logo size={96} /></Animated.View>
     </View>

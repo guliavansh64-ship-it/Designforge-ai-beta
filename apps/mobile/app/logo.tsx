@@ -34,7 +34,7 @@ export default function Logo() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [concepts, setConcepts] = useState<Version[]>([]);
   const [active, setActive] = useState<Version | null>(null);
-  const gemini = me?.connections.find((x) => x.provider === 'gemini');
+  const stitch = me?.connections.find((x) => x.provider === 'stitch');
   const allowed = me?.plan.features.includes('logo_studio');
 
   const load = async (p: string) => {
@@ -60,9 +60,9 @@ export default function Logo() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }} keyboardShouldPersistTaps="handled">
-      <Card index={0}><Row style={{ alignItems: 'flex-start' }}><Info size={18} color="#38bdf8" /><T size={12} muted style={{ flex: 1 }}>Stitch generates UI screens, not logos. Logo Studio uses a separate Gemini image model with your own Gemini key. AI logos are raster; Wordmark concepts also get a true SVG. Check trademarks before commercial use.</T></Row></Card>
+      <Card index={0}><Row style={{ alignItems: 'flex-start' }}><Info size={18} color="#38bdf8" /><T size={12} muted style={{ flex: 1 }}>Logo Studio uses Google Stitch to design custom vector logos, brand palettes, and typography. Full brand kit exports available.</T></Row></Card>
       {!allowed && <ErrorBox error={Object.assign(new Error('Logo Studio is available on Pro and above.'), { action: 'upgrade_plan' }) as any} />}
-      {allowed && !gemini?.connected && <ErrorBox error={Object.assign(new Error('Connect your Gemini key to generate logos.'), { action: 'open_integrations' }) as any} />}
+      {allowed && !stitch?.connected && <ErrorBox error={Object.assign(new Error('Connect your Google Stitch key to generate logos.'), { action: 'open_integrations' }) as any} />}
       {concepts.length > 0 && (
         <Card index={1} style={{ gap: 12 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
@@ -89,7 +89,7 @@ export default function Logo() {
         <Label>Styles</Label><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{STYLES.map((s) => <Chip key={s} label={s} active={styles.includes(s)} onPress={() => setStyles(styles.includes(s) ? styles.filter((x) => x !== s) : [...styles, s])} />)}</View>
         <Label>Concepts</Label><Row>{[1, 2, 3, 4].map((n) => <Chip key={n} label={String(n)} active={count === n} onPress={() => setCount(n)} />)}</Row>
         <ErrorBox error={err} />
-        <Button title={`Generate · ${4 * Math.ceil(count / 2)} cr`} icon={<PenTool color="#fff" size={18} />} loading={busy} disabled={!allowed || !gemini?.connected || !!running || !brand.trim() || industry.trim().length < 2 || !styles.length} onPress={generate} />
+        <Button title={`Generate · ${4 * Math.ceil(count / 2)} cr`} icon={<PenTool color="#fff" size={18} />} loading={busy} disabled={!allowed || !stitch?.connected || !!running || !brand.trim() || industry.trim().length < 2 || !styles.length} onPress={generate} />
         {!allowed && <Button variant="ghost" title="See plans" onPress={() => router.push('/billing')} />}
       </Card>
     </ScrollView>

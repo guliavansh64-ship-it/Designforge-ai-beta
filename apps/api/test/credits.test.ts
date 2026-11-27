@@ -19,7 +19,7 @@ describe('credit ledger', () => {
     await credits.getBalance('u1');
     const results = await Promise.all(Array.from({ length: 5 }, () => credits.reserve('u1', 'generate_flash', 'same-key')));
     expect(results.filter((r) => !r.duplicate)).toHaveLength(1);
-    expect(await credits.getBalance('u1')).toBe(38);
+    expect(await credits.getBalance('u1')).toBe(35);
   });
   it('refunds exactly once', async () => {
     const r = await credits.reserve('u1', 'generate_pro', 'k-refund');

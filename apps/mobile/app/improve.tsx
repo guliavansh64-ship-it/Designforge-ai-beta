@@ -59,7 +59,7 @@ export default function Improve() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
-      <Appear><T muted size={13}>DesignForge audits your design against a transparent checklist, plans fixes, applies them through your Stitch account, then re-audits and shows what changed. Scores are DesignForge heuristics, not objective ratings.</T></Appear>
+      <Appear><T muted size={13}>Designo audits your design against a transparent checklist, plans fixes, applies them through your Stitch account, then re-audits and shows what changed. Scores are Designo heuristics, not objective ratings.</T></Appear>
       <Row><Chip label="From a project" active={src === 'project'} onPress={() => setSrc('project')} /><Chip label="Upload HTML / screenshot" active={src === 'upload'} onPress={() => setSrc('upload')} /></Row>
       <Card index={1} style={{ gap: 10 }}>
         <Swap id={src} style={{ gap: 10 }}>{src === 'project' ? (<><Label>Project</Label><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{eligible.map((p) => <Chip key={p.id} label={p.name} active={pid === p.id} onPress={() => setPid(p.id)} />)}</View>{!eligible.length && <T muted size={13}>No generated designs yet.</T>}</>)

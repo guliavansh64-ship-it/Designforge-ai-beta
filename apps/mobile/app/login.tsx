@@ -50,7 +50,7 @@ export default function Login() {
         <View style={{ marginTop: 36, gap: 18, alignItems: 'center' }}>
           <Animated.View entering={popIn.delay(60)}><Logo size={108} /></Animated.View>
           <Animated.View entering={FadeInDown.delay(180).springify().damping(16)} style={{ alignItems: 'center', gap: 8 }}>
-            <T size={30} weight="800" style={{ textAlign: 'center', lineHeight: 36 }}>DesignForge AI</T>
+            <T size={30} weight="800" style={{ textAlign: 'center', lineHeight: 36 }}>Designo</T>
             <T muted style={{ textAlign: 'center' }}>Describe an idea. Get a beautiful app or website — designed by AI in seconds.</T>
           </Animated.View>
         </View>

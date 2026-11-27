@@ -7,9 +7,9 @@ const googleServicesFile = process.env.GOOGLE_SERVICES_JSON ?? (fs.existsSync('.
 // All values here are public identifiers. Secrets (Stitch/Gemini keys, Razorpay secret,
 // Firebase service account) live ONLY on the backend and are never bundled into the APK.
 const config: ExpoConfig = {
-  name: 'DesignForge AI',
-  slug: 'designforge-ai',
-  scheme: 'designforge',
+  name: 'Designo',
+  slug: 'designo',
+  scheme: 'designo',
   version: process.env.EXPO_PUBLIC_ALLOW_API_OVERRIDE === '1' ? '1.0.0-test' : '1.0.0',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
@@ -21,7 +21,7 @@ const config: ExpoConfig = {
     // Circular logo inside the adaptive-icon safe zone, so it looks round on every launcher shape.
     adaptiveIcon: { foregroundImage: './assets/adaptive-icon.png', backgroundColor: '#0a0a0f' },
     ...(googleServicesFile && { googleServicesFile }),
-    permissions: ['POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE', 'WAKE_LOCK'],
+    permissions: ['POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE', 'WAKE_LOCK', 'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS'],
     // Least privilege: strip permissions that libraries/templates add but this app never uses.
     // (Document picker uses the Storage Access Framework; sharing uses content URIs; no biometrics/overlay/phone state.)
     blockedPermissions: [
@@ -37,6 +37,7 @@ const config: ExpoConfig = {
     '@react-native-google-signin/google-signin',
     // Monochrome status-bar icon + default channel, so pushes shown by Android while the app is CLOSED look right.
     ['expo-notifications', { icon: './assets/notification-icon.png', color: '#7c5cff', defaultChannel: 'default' }],
+    './plugins/withSystemPermissions',
     './plugins/withReleaseSigning',
     './plugins/withTestCleartext',
   ],
